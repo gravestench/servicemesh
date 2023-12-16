@@ -54,7 +54,7 @@ type Service interface {
 // their dependencies are resolved, as well as a method that attempts to resolve
 // those dependencies with the given service mesh.
 //
-// The Manager will use this interface automatically when a service is added.
+// The MeshManager will use this interface automatically when a service is added.
 // You do not need to implement this interface, it is optional. You would want
 // to do this when you have services that depend upon each other to operate
 type DependencyResolver interface {
@@ -66,17 +66,17 @@ type DependencyResolver interface {
 
 	// ResolveDependencies attempts to resolve the dependencies of the
 	// service using the provided Mesh.
-	ResolveDependencies(Mesh)
+	ResolveDependencies(m Mesh)
 }
 
-// ServiceLogger is an interface for services that require a logger instance.
+// HasLogger is an interface for services that require a logger instance.
 //
-// The ServiceLogger interface represents components that depend on a logger for
+// The HasLogger interface represents components that depend on a logger for
 // logging purposes. It defines a method to set the logger instance.
-type ServiceLogger interface {
+type HasLogger interface {
 	Service
 	// UseLogger sets the logger instance for the component.
-	SetLogger(logger *slog.Logger)
+	SetLogger(l *slog.Logger)
 	// Logger yields the logger instance for the component.
 	Logger() *slog.Logger
 }
@@ -128,14 +128,14 @@ type EventHandlerServiceLoggerBound interface {
 }
 
 // EventHandlerRuntimeRunLoopInitiated is an optional interface. If implemented, it will automatically bind to the
-// "Manager Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
+// "MeshManager Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerRuntimeRunLoopInitiated interface {
 	OnRuntimeRunLoopInitiated(args ...interface{})
 }
 
 // EventHandlerRuntimeShutdownInitiated is an optional interface. If implemented, it will automatically bind to the
-// "Manager Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
+// "MeshManager Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerRuntimeShutdownInitiated interface {
 	OnRuntimeShutdownInitiated(args ...interface{})
