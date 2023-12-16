@@ -9,7 +9,7 @@ import (
 )
 
 // newLogger is a factory function that generates a slog instance
-func (r *MeshManager) newLogger(service Service) *slog.Logger {
+func (r *Mesh) newLogger(service Service) *slog.Logger {
 	name := service.Name()
 
 	opts := &slog.HandlerOptions{
@@ -31,7 +31,7 @@ func (r *MeshManager) newLogger(service Service) *slog.Logger {
 	return logger
 }
 
-func (r *MeshManager) SetLogLevel(level int) { // Change level type as appropriate
+func (r *Mesh) SetLogLevel(level int) { // Change level type as appropriate
 	r.logLevel = level
 	r.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
 	r.logger = r.newLogger(r)
@@ -39,7 +39,7 @@ func (r *MeshManager) SetLogLevel(level int) { // Change level type as appropria
 	r.updateServiceLoggers()
 }
 
-func (r *MeshManager) SetLogDestination(dst io.Writer) {
+func (r *Mesh) SetLogDestination(dst io.Writer) {
 	r.logOutput = dst
 
 	newLogger := r.newLogger(r)
@@ -48,7 +48,7 @@ func (r *MeshManager) SetLogDestination(dst io.Writer) {
 	r.updateServiceLoggers()
 }
 
-func (r *MeshManager) updateServiceLoggers() {
+func (r *Mesh) updateServiceLoggers() {
 	// set the log level for each service that has a logger
 	for _, service := range r.Services() {
 		candidate, ok := service.(HasLogger)

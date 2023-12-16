@@ -14,10 +14,10 @@ import (
 	ee "github.com/gravestench/eventemitter"
 )
 
-var _ Mesh = &MeshManager{}
+var _ M = &Mesh{}
 
-// MeshManager represents a collection of service mesh services.
-type MeshManager struct {
+// Mesh represents a collection of service mesh services.
+type Mesh struct {
 	name         string
 	quit         chan os.Signal
 	services     []Service
@@ -28,15 +28,15 @@ type MeshManager struct {
 	shuttingDown bool
 }
 
-// New creates a new instance of a MeshManager.
-func New(args ...string) *MeshManager {
+// New creates a new instance of a Mesh.
+func New(args ...string) *Mesh {
 	name := "Service Mesh"
 
 	if len(args) > 0 {
 		name = strings.Join(args, " ")
 	}
 
-	r := &MeshManager{
+	r := &Mesh{
 		name:      name,
 		events:    ee.New(),
 		logOutput: os.Stdout,
@@ -49,7 +49,7 @@ func New(args ...string) *MeshManager {
 	return r
 }
 
-func (r *MeshManager) Init(_ Mesh) {
+func (r *Mesh) Init(_ M) {
 	if r.services != nil {
 		return
 	}
@@ -64,8 +64,8 @@ func (r *MeshManager) Init(_ Mesh) {
 	r.services = make([]Service, 0)
 }
 
-// Add a single service to the MeshManager.
-func (r *MeshManager) Add(service Service) *sync.WaitGroup {
+// Add a single service to the Mesh.
+func (r *Mesh) Add(service Service) *sync.WaitGroup {
 	r.Init(nil) // always ensure service mesh is init
 	r.bindEventHandlerInterfaces(service)
 
@@ -85,8 +85,8 @@ func (r *MeshManager) Add(service Service) *sync.WaitGroup {
 
 	r.services = append(r.services, service)
 
-	// Check if the service is a DependencyResolver
-	if resolver, ok := service.(DependencyResolver); ok {
+	// Check if the service is a HasDependencies
+	if resolver, ok := service.(HasDependencies); ok {
 		wg.Add(1)
 		// Resolve dependencies before initialization
 		go func() {
@@ -107,7 +107,7 @@ func (r *MeshManager) Add(service Service) *sync.WaitGroup {
 	return &wg
 }
 
-func (r *MeshManager) resolveDependenciesAndInit(resolver DependencyResolver) {
+func (r *Mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	r.events.Emit(EventDependencyResolutionStarted, resolver)
 
 	// Check if all dependencies are resolved
@@ -122,8 +122,8 @@ func (r *MeshManager) resolveDependenciesAndInit(resolver DependencyResolver) {
 	r.initService(resolver)
 }
 
-// initService initializes a service and adds it to the MeshManager.
-func (r *MeshManager) initService(service Service) {
+// initService initializes a service and adds it to the Mesh.
+func (r *Mesh) initService(service Service) {
 	if l, ok := service.(HasLogger); ok && l.Logger() != nil {
 		l.Logger().Debug("initializing")
 	} else {
@@ -136,14 +136,14 @@ func (r *MeshManager) initService(service Service) {
 	r.events.Emit(EventServiceInitialized, service)
 }
 
-// Services returns a pointer to a slice of interfaces representing the services managed by the MeshManager.
-func (r *MeshManager) Services() []Service {
+// Services returns a pointer to a slice of interfaces representing the services managed by the Mesh.
+func (r *Mesh) Services() []Service {
 	duplicate := append([]Service{}, r.services...)
 	return duplicate
 }
 
-// Remove a specific service from the MeshManager.
-func (r *MeshManager) Remove(service Service) *sync.WaitGroup {
+// Remove a specific service from the Mesh.
+func (r *Mesh) Remove(service Service) *sync.WaitGroup {
 	wg := r.events.Emit(EventServiceRemoved)
 
 	for i, svc := range r.services {
@@ -157,8 +157,8 @@ func (r *MeshManager) Remove(service Service) *sync.WaitGroup {
 	return wg
 }
 
-// Shutdown sends an interrupt signal to the MeshManager, indicating it should exit.
-func (r *MeshManager) Shutdown() *sync.WaitGroup {
+// Shutdown sends an interrupt signal to the Mesh, indicating it should exit.
+func (r *Mesh) Shutdown() *sync.WaitGroup {
 	if r.shuttingDown {
 		return &sync.WaitGroup{}
 	}
@@ -186,13 +186,13 @@ func (r *MeshManager) Shutdown() *sync.WaitGroup {
 	return wg
 }
 
-// Name returns the name of the MeshManager.
-func (r *MeshManager) Name() string {
+// Name returns the name of the Mesh.
+func (r *Mesh) Name() string {
 	return r.name
 }
 
-// Run starts the MeshManager and waits for an interrupt signal to exit.
-func (r *MeshManager) Run() {
+// Run starts the Mesh and waits for an interrupt signal to exit.
+func (r *Mesh) Run() {
 	r.events.Emit(EventRuntimeRunLoopInitiated)
 
 	<-r.quit              // blocks until signal is recieved
@@ -203,11 +203,11 @@ func (r *MeshManager) Run() {
 }
 
 // Events yields the global event bus for the service mesh
-func (r *MeshManager) Events() *ee.EventEmitter {
+func (r *Mesh) Events() *ee.EventEmitter {
 	return r.events
 }
 
-func (r *MeshManager) bindEventHandlerInterfaces(service Service) {
+func (r *Mesh) bindEventHandlerInterfaces(service Service) {
 	if handler, ok := service.(EventHandlerServiceAdded); ok {
 		if service != r {
 			r.logger.Info("bound 'EventServiceAdded' event handler", "service", service.Name())
@@ -272,7 +272,7 @@ func (r *MeshManager) bindEventHandlerInterfaces(service Service) {
 	}
 }
 
-func (r *MeshManager) OnServiceAdded(args ...any) {
+func (r *Mesh) OnServiceAdded(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -284,11 +284,11 @@ func (r *MeshManager) OnServiceAdded(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnRuntimeShutdownInitiated(_ ...any) {
+func (r *Mesh) OnRuntimeShutdownInitiated(_ ...any) {
 	r.logger.Warn("initiating graceful shutdown")
 }
 
-func (r *MeshManager) OnServiceRemoved(args ...any) {
+func (r *Mesh) OnServiceRemoved(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -298,7 +298,7 @@ func (r *MeshManager) OnServiceRemoved(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnServiceInitialized(args ...any) {
+func (r *Mesh) OnServiceInitialized(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -308,7 +308,7 @@ func (r *MeshManager) OnServiceInitialized(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnServiceEventsBound(args ...any) {
+func (r *Mesh) OnServiceEventsBound(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -318,7 +318,7 @@ func (r *MeshManager) OnServiceEventsBound(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnServiceLoggerBound(args ...any) {
+func (r *Mesh) OnServiceLoggerBound(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -328,11 +328,11 @@ func (r *MeshManager) OnServiceLoggerBound(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnRuntimeRunLoopInitiated(_ ...any) {
+func (r *Mesh) OnRuntimeRunLoopInitiated(_ ...any) {
 	r.logger.Debug("run loop started")
 }
 
-func (r *MeshManager) OnDependencyResolutionStarted(args ...any) {
+func (r *Mesh) OnDependencyResolutionStarted(args ...any) {
 	if len(args) < 1 {
 		return
 	}
@@ -342,7 +342,7 @@ func (r *MeshManager) OnDependencyResolutionStarted(args ...any) {
 	}
 }
 
-func (r *MeshManager) OnDependencyResolutionEnded(args ...any) {
+func (r *Mesh) OnDependencyResolutionEnded(args ...any) {
 	if len(args) < 1 {
 		return
 	}

@@ -8,21 +8,21 @@ import (
 	ee "github.com/gravestench/eventemitter"
 )
 
-// Mesh is the abstract idea of the service mesh, an interface.
+// M is the abstract idea of the service mesh, an interface.
 //
-// The Mesh interface defines the operations that can be performed with
+// The M interface defines the operations that can be performed with
 // services, such as adding, removing, and retrieving services. It acts as a
-// container for services and uses other interfaces like DependencyResolver to
+// container for services and uses other interfaces like HasDependencies to
 // work with them and do things automatically on their behalf.
-type Mesh interface {
-	// Add a single service to the Mesh.
+type M interface {
+	// Add a single service to the M.
 	Add(Service) *sync.WaitGroup
 
-	// Remove a specific service from the Mesh.
+	// Remove a specific service from the M.
 	Remove(Service) *sync.WaitGroup
 
 	// Services returns a pointer to a slice of interfaces representing the
-	// services currently managed by the service Mesh.
+	// services currently managed by the service M.
 	Services() []Service
 
 	SetLogLevel(level int)
@@ -40,24 +40,24 @@ type Mesh interface {
 // retrieving its name.
 type Service interface {
 	// Init initializes the service and establishes a connection to the
-	// service Mesh.
-	Init(m Mesh)
+	// service M.
+	Init(mesh M)
 
 	// Name returns the name of the service.
 	Name() string
 }
 
-// DependencyResolver represents a service that can resolve its dependencies.
+// HasDependencies represents a service that can resolve its dependencies.
 //
-// The DependencyResolver interface extends the Service interface and adds
+// The HasDependencies interface extends the Service interface and adds
 // methods for managing dependencies. It allows services to declare whether
 // their dependencies are resolved, as well as a method that attempts to resolve
 // those dependencies with the given service mesh.
 //
-// The MeshManager will use this interface automatically when a service is added.
+// The Mesh will use this interface automatically when a service is added.
 // You do not need to implement this interface, it is optional. You would want
 // to do this when you have services that depend upon each other to operate
-type DependencyResolver interface {
+type HasDependencies interface {
 	Service
 
 	// DependenciesResolved returns true if all dependencies are resolved. This
@@ -65,8 +65,8 @@ type DependencyResolver interface {
 	DependenciesResolved() bool
 
 	// ResolveDependencies attempts to resolve the dependencies of the
-	// service using the provided Mesh.
-	ResolveDependencies(m Mesh)
+	// service using the provided M.
+	ResolveDependencies(mesh M)
 }
 
 // HasLogger is an interface for services that require a logger instance.
@@ -128,14 +128,14 @@ type EventHandlerServiceLoggerBound interface {
 }
 
 // EventHandlerRuntimeRunLoopInitiated is an optional interface. If implemented, it will automatically bind to the
-// "MeshManager Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
+// "Mesh Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerRuntimeRunLoopInitiated interface {
 	OnRuntimeRunLoopInitiated(args ...interface{})
 }
 
 // EventHandlerRuntimeShutdownInitiated is an optional interface. If implemented, it will automatically bind to the
-// "MeshManager Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
+// "Mesh Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerRuntimeShutdownInitiated interface {
 	OnRuntimeShutdownInitiated(args ...interface{})

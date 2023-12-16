@@ -3,11 +3,11 @@
 This module provides an implementation of a "service mesh", which is just a 
 wrapper for a collection of "services."
 
-The `Mesh` itself merely manages the service lifecycle. Included in this
-module are abstract interfaces for the service mesh (`Mesh`) and service mesh 
+The `M` interface itself merely manages the service lifecycle. Included in this
+module are abstract interfaces for the service mesh (`M` interface) and service mesh 
 services (`Service`), as well as other interfaces for logging, 
 dependency injection, and graceful shutdown. A concrete implementation of the 
-`Mesh` is provided (see `MeshManager`).
+`M` interface is provided (see `Mesh`).
 
 # Examples
 For examples see [the examples repo](https://github.com/gravestench/servicemesh-examples).
@@ -143,7 +143,7 @@ interfaces are designed to promote modularity and extensibility in your codebase
 
 ### Mesh
 
-The `Mesh` describes the contract of the concrete service mesh `Manager` 
+The `M` interface describes the contract of the concrete service `Mesh` 
 implementation that is included in this repo.
 
 ```go
@@ -158,7 +158,7 @@ type Mesh interface {
 ### Service
 
 The `Service` interface represents a generic service within the
-`Mesh`. It defines methods for initializing the service and retrieving its name.
+`M` interface. It defines methods for initializing the service and retrieving its name.
 
 ```go
 type Service interface {
@@ -172,7 +172,7 @@ type Service interface {
 The `HasDependencies` interface extends the `Service` interface and
 adds methods for managing dependencies. It allows services to declare their 
 dependencies, and to declare when they are resolved. The concrete implementation
-of the `Mesh` will use this `HasDependencies` interface to resolves any 
+of the `M` interface will use this `HasDependencies` interface to resolves any 
 dependencies before the `Init()` method of a given service is invoked. This is 
 an optional interface, your services do not need to implement this.
 
@@ -180,7 +180,7 @@ an optional interface, your services do not need to implement this.
 type HasDependencies interface {
 	Service
     DependenciesResolved() bool
-    ResolveDependencies(Mesh)
+    ResolveDependencies(mesh M)
 }
 ```
 
