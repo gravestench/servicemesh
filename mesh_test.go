@@ -31,8 +31,8 @@ func (e *exampleService) Logger() *slog.Logger {
 	return e.logger
 }
 
-func (e *exampleService) Init(rt Mesh) {
-
+func (e *exampleService) Init(_ Mesh) {
+	// noop
 }
 
 func (e *exampleService) Name() string {

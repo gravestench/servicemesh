@@ -14,6 +14,32 @@ import (
 	ee "github.com/gravestench/eventemitter"
 )
 
+const dependencyResolutionDwellDuration = time.Millisecond * 10
+
+// New creates a new instance of a service mesh. Optionally, strings can be
+// supplied as arguments which are concatenated to form the name of the service
+// mesh during logging.
+func New(args ...string) Mesh {
+	name := "Service Mesh"
+
+	if len(args) > 0 {
+		name = strings.Join(args, " ")
+	}
+
+	r := &mesh{
+		name:      name,
+		events:    ee.New(),
+		logOutput: os.Stdout,
+		logLevel:  slog.LevelInfo,
+	}
+
+	// the service mesh itself is a service
+	// that binds handlers to its own events
+	r.Add(r)
+
+	return r
+}
+
 var _ Mesh = &mesh{}
 
 // mesh represents a collection of service mesh services.
@@ -29,40 +55,17 @@ type mesh struct {
 	shuttingDown bool
 }
 
-// New creates a new instance of a mesh.
-func New(args ...string) Mesh {
-	name := "Service Mesh"
-
-	if len(args) > 0 {
-		name = strings.Join(args, " ")
-	}
-
-	r := &mesh{
-		name:      name,
-		events:    ee.New(),
-		logOutput: os.Stdout,
-		logLevel:  slog.LevelInfo,
-	}
-
-	// the service mesh itself is a service that binds handlers to its own events
-	r.Add(r)
-
-	return r
-}
-
 func (m *mesh) Init(_ Mesh) {
 	if m.services != nil {
 		return
 	}
 
 	m.logger = m.newLogger(m)
+	m.services = make([]Service, 0)
+	m.quit = make(chan os.Signal, 1)
 
 	m.logger.Info("initializing")
-
-	m.quit = make(chan os.Signal, 1)
 	signal.Notify(m.quit, os.Interrupt)
-
-	m.services = make([]Service, 0)
 }
 
 // Add a single service to the mesh.
@@ -77,9 +80,9 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 	}
 
 	// Check if the service uses a logger
-	if loggerUser, ok := service.(HasLogger); ok {
+	if candidate, ok := service.(HasLogger); ok {
 		wg.Add(1)
-		loggerUser.SetLogger(m.newLogger(service))
+		candidate.SetLogger(m.newLogger(service))
 		m.events.Emit(EventServiceLoggerBound, service).Wait()
 		wg.Done()
 	}
@@ -88,16 +91,16 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 
 	// Check if the service is a HasDependencies
 	if resolver, ok := service.(HasDependencies); ok {
-		wg.Add(1)
 		// Resolve dependencies before initialization
+		wg.Add(1)
 		go func() {
 			m.resolveDependenciesAndInit(resolver)
 			m.events.Emit(EventServiceAdded, service)
 			wg.Done()
 		}()
 	} else {
-		wg.Add(1)
 		// No dependencies to resolve, directly initialize the service
+		wg.Add(1)
 		go func() {
 			m.initService(service)
 			m.events.Emit(EventServiceAdded, service)
@@ -114,7 +117,7 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	// Check if all dependencies are resolved
 	for !resolver.DependenciesResolved() {
 		resolver.ResolveDependencies(m)
-		time.Sleep(time.Millisecond * 10)
+		time.Sleep(dependencyResolutionDwellDuration)
 	}
 
 	m.events.Emit(EventDependencyResolutionEnded, resolver)
@@ -123,7 +126,7 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	m.initService(resolver)
 }
 
-// initService initializes a service and adds it to the mesh.
+// initService initializes a service after being added to the mesh.
 func (m *mesh) initService(service Service) {
 	if l, ok := service.(HasLogger); ok && l.Logger() != nil {
 		l.Logger().Debug("initializing")
@@ -131,16 +134,16 @@ func (m *mesh) initService(service Service) {
 		m.newLogger(service).Debug("initializing")
 	}
 
-	// Initialize the service
 	service.Init(m)
 
 	m.events.Emit(EventServiceInitialized, service)
 }
 
-// Services returns a pointer to a slice of interfaces representing the services managed by the mesh.
+// Services returns a pointer to a slice of interfaces representing the services
+// managed by the mesh. This is a copy of the internal slice, modifying it will
+// not modify the slice being maintained by the mesh.
 func (m *mesh) Services() []Service {
-	duplicate := append([]Service{}, m.services...)
-	return duplicate
+	return append([]Service{}, m.services...)
 }
 
 // Remove a specific service from the mesh.
@@ -161,12 +164,15 @@ func (m *mesh) Remove(service Service) *sync.WaitGroup {
 // Shutdown sends an interrupt signal to the mesh, indicating it should exit.
 func (m *mesh) Shutdown() *sync.WaitGroup {
 	if m.shuttingDown {
+		// if we are already shutting down, nothing to do
 		return &sync.WaitGroup{}
 	}
 
-	m.quit <- syscall.SIGINT
+	// if this method has been invoked, send SIGINT to unblock the Run method
 	m.shuttingDown = true
+	m.quit <- syscall.SIGINT
 
+	// we will give all shutdown event handlers a chance to respond
 	wg := m.events.Emit(EventServiceMeshShutdownInitiated)
 
 	for _, service := range m.services {
@@ -184,6 +190,7 @@ func (m *mesh) Shutdown() *sync.WaitGroup {
 
 	m.logger.Info("exiting")
 
+	// allow the caller to wait for the event handlers to finish
 	return wg
 }
 
@@ -205,9 +212,18 @@ func (m *mesh) Run() {
 
 // Events yields the global event bus for the service mesh
 func (m *mesh) Events() *ee.EventEmitter {
+	if m.events == nil {
+		m.events = ee.New()
+	}
+
 	return m.events
 }
 
+// bindEventHandlerInterfaces provides the syntactic sugar for services that
+// want to bind event handlers to the event bus for specific service mesh
+// events. These are just wrappers for binding callbacks with the event emitter.
+// This allows other services to implement the event bus intergation interfaces
+// without needing to know how to use the event emitter.
 func (m *mesh) bindEventHandlerInterfaces(service Service) {
 	if handler, ok := service.(EventHandlerServiceAdded); ok {
 		if service != m {
@@ -334,12 +350,14 @@ func (m *mesh) bindEventHandlerInterfaces(service Service) {
 	}
 }
 
-func (m *mesh) OnServiceAdded(service Service) {
-	if service == m {
-		return
-	}
+// The following methods implement the event handler integration interfaces
+// found in interfaces.go. We dog-food our own event bus to log the various
+// service mesh events.
 
-	m.logger.Info("service added", "service", service.Name())
+func (m *mesh) OnServiceAdded(service Service) {
+	if service != m {
+		m.logger.Info("service added", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnServiceMeshShutdownInitiated() {
@@ -347,19 +365,27 @@ func (m *mesh) OnServiceMeshShutdownInitiated() {
 }
 
 func (m *mesh) OnServiceRemoved(service Service) {
-	m.logger.Debug("removed service", "service", service.Name())
+	if service != m {
+		m.logger.Debug("removed service", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnServiceInitialized(service Service) {
-	m.logger.Debug("service initialized", "service", service.Name())
+	if service != m {
+		m.logger.Debug("service initialized", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnServiceEventsBound(service Service) {
-	m.logger.Debug("events bound", "service", service.Name())
+	if service != m {
+		m.logger.Debug("events bound", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnServiceLoggerBound(service Service) {
-	m.logger.Debug("logger bound", "service", service.Name())
+	if service != m {
+		m.logger.Debug("logger bound", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnServiceMeshRunLoopInitiated() {
@@ -367,9 +393,13 @@ func (m *mesh) OnServiceMeshRunLoopInitiated() {
 }
 
 func (m *mesh) OnDependencyResolutionStarted(service Service) {
-	m.logger.Debug("dependency resolution started", "service", service.Name())
+	if service != m {
+		m.logger.Debug("dependency resolution started", "service", service.Name())
+	}
 }
 
 func (m *mesh) OnDependencyResolutionEnded(service Service) {
-	m.logger.Debug("dependency resolution completed", "service", service.Name())
+	if service != m {
+		m.logger.Debug("dependency resolution completed", "service", service.Name())
+	}
 }

@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-// newLogger is a factory function that generates a slog instance
+// newLogger is a factory function that generates a slog instance for a service.
 func (m *mesh) newLogger(service Service) *slog.Logger {
 	name := service.Name()
 
@@ -33,13 +33,17 @@ func (m *mesh) newLogger(service Service) *slog.Logger {
 	return logger
 }
 
-func (m *mesh) SetLogHandler(handler slog.Handler) { // Change level type as appropriate
+// SetLogHandler sets the slog log handler interface for the service mesh and
+// all existing services, as well as any services added in the future.
+func (m *mesh) SetLogHandler(handler slog.Handler) {
 	m.logHandler = handler
 	m.logger = m.newLogger(m)
 
 	m.updateServiceLoggers()
 }
 
+// SetLogLevel sets the slog logger log level for the service mesh and
+// all existing services, as well as any services added in the future.
 func (m *mesh) SetLogLevel(level slog.Level) { // Change level type as appropriate
 	m.logLevel = level
 	m.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
@@ -48,6 +52,8 @@ func (m *mesh) SetLogLevel(level slog.Level) { // Change level type as appropria
 	m.updateServiceLoggers()
 }
 
+// SetLogDestination sets the slog logger destination for the service mesh and
+// all existing services, as well as any services added in the future.
 func (m *mesh) SetLogDestination(dst io.Writer) {
 	m.logOutput = dst
 
