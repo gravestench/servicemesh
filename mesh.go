@@ -14,29 +14,30 @@ import (
 	ee "github.com/gravestench/eventemitter"
 )
 
-var _ M = &Mesh{}
+var _ Mesh = &mesh{}
 
-// Mesh represents a collection of service mesh services.
-type Mesh struct {
+// mesh represents a collection of service mesh services.
+type mesh struct {
 	name         string
 	quit         chan os.Signal
 	services     []Service
 	logger       *slog.Logger
 	logOutput    io.Writer
 	logLevel     int
+	logHandler   slog.Handler
 	events       *ee.EventEmitter
 	shuttingDown bool
 }
 
-// New creates a new instance of a Mesh.
-func New(args ...string) *Mesh {
+// New creates a new instance of a mesh.
+func New(args ...string) Mesh {
 	name := "Service Mesh"
 
 	if len(args) > 0 {
 		name = strings.Join(args, " ")
 	}
 
-	r := &Mesh{
+	r := &mesh{
 		name:      name,
 		events:    ee.New(),
 		logOutput: os.Stdout,
@@ -49,57 +50,57 @@ func New(args ...string) *Mesh {
 	return r
 }
 
-func (r *Mesh) Init(_ M) {
-	if r.services != nil {
+func (m *mesh) Init(_ Mesh) {
+	if m.services != nil {
 		return
 	}
 
-	r.logger = r.newLogger(r)
+	m.logger = m.newLogger(m)
 
-	r.logger.Info("initializing")
+	m.logger.Info("initializing")
 
-	r.quit = make(chan os.Signal, 1)
-	signal.Notify(r.quit, os.Interrupt)
+	m.quit = make(chan os.Signal, 1)
+	signal.Notify(m.quit, os.Interrupt)
 
-	r.services = make([]Service, 0)
+	m.services = make([]Service, 0)
 }
 
-// Add a single service to the Mesh.
-func (r *Mesh) Add(service Service) *sync.WaitGroup {
-	r.Init(nil) // always ensure service mesh is init
-	r.bindEventHandlerInterfaces(service)
+// Add a single service to the mesh.
+func (m *mesh) Add(service Service) *sync.WaitGroup {
+	m.Init(nil) // always ensure service mesh is init
+	m.bindEventHandlerInterfaces(service)
 
 	var wg sync.WaitGroup
 
-	if service != r {
-		r.logger.Info("adding service to mesh", "service", service.Name())
+	if service != m {
+		m.logger.Info("preparing service", "service", service.Name())
 	}
 
 	// Check if the service uses a logger
 	if loggerUser, ok := service.(HasLogger); ok {
 		wg.Add(1)
-		loggerUser.SetLogger(r.newLogger(service))
-		r.events.Emit(EventServiceLoggerBound, service).Wait()
+		loggerUser.SetLogger(m.newLogger(service))
+		m.events.Emit(EventServiceLoggerBound, service).Wait()
 		wg.Done()
 	}
 
-	r.services = append(r.services, service)
+	m.services = append(m.services, service)
 
 	// Check if the service is a HasDependencies
 	if resolver, ok := service.(HasDependencies); ok {
 		wg.Add(1)
 		// Resolve dependencies before initialization
 		go func() {
-			r.resolveDependenciesAndInit(resolver)
-			r.events.Emit(EventServiceAdded, service)
+			m.resolveDependenciesAndInit(resolver)
+			m.events.Emit(EventServiceAdded, service)
 			wg.Done()
 		}()
 	} else {
 		wg.Add(1)
 		// No dependencies to resolve, directly initialize the service
 		go func() {
-			r.initService(service)
-			r.events.Emit(EventServiceAdded, service)
+			m.initService(service)
+			m.events.Emit(EventServiceAdded, service)
 			wg.Done()
 		}()
 	}
@@ -107,49 +108,49 @@ func (r *Mesh) Add(service Service) *sync.WaitGroup {
 	return &wg
 }
 
-func (r *Mesh) resolveDependenciesAndInit(resolver HasDependencies) {
-	r.events.Emit(EventDependencyResolutionStarted, resolver)
+func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
+	m.events.Emit(EventDependencyResolutionStarted, resolver)
 
 	// Check if all dependencies are resolved
 	for !resolver.DependenciesResolved() {
-		resolver.ResolveDependencies(r)
+		resolver.ResolveDependencies(m)
 		time.Sleep(time.Millisecond * 10)
 	}
 
-	r.events.Emit(EventDependencyResolutionEnded, resolver)
+	m.events.Emit(EventDependencyResolutionEnded, resolver)
 
 	// All dependencies resolved, initialize the service
-	r.initService(resolver)
+	m.initService(resolver)
 }
 
-// initService initializes a service and adds it to the Mesh.
-func (r *Mesh) initService(service Service) {
+// initService initializes a service and adds it to the mesh.
+func (m *mesh) initService(service Service) {
 	if l, ok := service.(HasLogger); ok && l.Logger() != nil {
 		l.Logger().Debug("initializing")
 	} else {
-		r.newLogger(service).Debug("initializing")
+		m.newLogger(service).Debug("initializing")
 	}
 
 	// Initialize the service
-	service.Init(r)
+	service.Init(m)
 
-	r.events.Emit(EventServiceInitialized, service)
+	m.events.Emit(EventServiceInitialized, service)
 }
 
-// Services returns a pointer to a slice of interfaces representing the services managed by the Mesh.
-func (r *Mesh) Services() []Service {
-	duplicate := append([]Service{}, r.services...)
+// Services returns a pointer to a slice of interfaces representing the services managed by the mesh.
+func (m *mesh) Services() []Service {
+	duplicate := append([]Service{}, m.services...)
 	return duplicate
 }
 
-// Remove a specific service from the Mesh.
-func (r *Mesh) Remove(service Service) *sync.WaitGroup {
-	wg := r.events.Emit(EventServiceRemoved)
+// Remove a specific service from the mesh.
+func (m *mesh) Remove(service Service) *sync.WaitGroup {
+	wg := m.events.Emit(EventServiceRemoved)
 
-	for i, svc := range r.services {
+	for i, svc := range m.services {
 		if svc == service {
-			r.logger.Info("removing service", "service", service.Name())
-			r.services = append(r.services[:i], r.services[i+1:]...)
+			m.logger.Info("removing service", "service", service.Name())
+			m.services = append(m.services[:i], m.services[i+1:]...)
 			break
 		}
 	}
@@ -157,197 +158,218 @@ func (r *Mesh) Remove(service Service) *sync.WaitGroup {
 	return wg
 }
 
-// Shutdown sends an interrupt signal to the Mesh, indicating it should exit.
-func (r *Mesh) Shutdown() *sync.WaitGroup {
-	if r.shuttingDown {
+// Shutdown sends an interrupt signal to the mesh, indicating it should exit.
+func (m *mesh) Shutdown() *sync.WaitGroup {
+	if m.shuttingDown {
 		return &sync.WaitGroup{}
 	}
 
-	r.quit <- syscall.SIGINT
-	r.shuttingDown = true
+	m.quit <- syscall.SIGINT
+	m.shuttingDown = true
 
-	wg := r.events.Emit(EventRuntimeShutdownInitiated)
+	wg := m.events.Emit(EventServiceMeshShutdownInitiated)
 
-	for _, service := range r.services {
+	for _, service := range m.services {
 		if quitter, ok := service.(HasGracefulShutdown); ok {
 
 			if l, ok := quitter.(HasLogger); ok && l.Logger() != nil {
 				l.Logger().Info("shutting down")
 			} else {
-				r.logger.Info("shutting down service", "service", service.Name())
+				m.logger.Info("shutting down service", "service", service.Name())
 			}
 
 			quitter.OnShutdown()
 		}
 	}
 
-	r.logger.Info("exiting")
+	m.logger.Info("exiting")
 
 	return wg
 }
 
-// Name returns the name of the Mesh.
-func (r *Mesh) Name() string {
-	return r.name
+// Name returns the name of the mesh.
+func (m *mesh) Name() string {
+	return m.name
 }
 
-// Run starts the Mesh and waits for an interrupt signal to exit.
-func (r *Mesh) Run() {
-	r.events.Emit(EventRuntimeRunLoopInitiated)
+// Run starts the mesh and waits for an interrupt signal to exit.
+func (m *mesh) Run() {
+	m.events.Emit(EventServiceMeshRunLoopInitiated)
 
-	<-r.quit              // blocks until signal is recieved
+	<-m.quit              // blocks until signal is recieved
 	fmt.Printf("\033[2D") // Remove ^C from stdout
 
-	r.Shutdown().Wait()
+	m.Shutdown().Wait()
 	time.Sleep(time.Second)
 }
 
 // Events yields the global event bus for the service mesh
-func (r *Mesh) Events() *ee.EventEmitter {
-	return r.events
+func (m *mesh) Events() *ee.EventEmitter {
+	return m.events
 }
 
-func (r *Mesh) bindEventHandlerInterfaces(service Service) {
+func (m *mesh) bindEventHandlerInterfaces(service Service) {
 	if handler, ok := service.(EventHandlerServiceAdded); ok {
-		if service != r {
-			r.logger.Info("bound 'EventServiceAdded' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventServiceAdded' event handler", "service", service.Name())
 		}
-		r.Events().On(EventServiceAdded, handler.OnServiceAdded)
+
+		m.Events().On(EventServiceAdded, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnServiceAdded(serviceArg)
+			}
+		})
 	}
 
 	if handler, ok := service.(EventHandlerServiceRemoved); ok {
-		if service != r {
-			r.logger.Info("bound 'EventServiceRemoved' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventServiceRemoved' event handler", "service", service.Name())
 		}
-		r.Events().On(EventServiceRemoved, handler.OnServiceRemoved)
+		m.Events().On(EventServiceRemoved, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnServiceRemoved(serviceArg)
+			}
+		})
 	}
 
 	if handler, ok := service.(EventHandlerServiceInitialized); ok {
-		if service != r {
-			r.logger.Info("bound 'EventServiceInitialized' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventServiceInitialized' event handler", "service", service.Name())
 		}
-		r.Events().On(EventServiceInitialized, handler.OnServiceInitialized)
+		m.Events().On(EventServiceInitialized, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnServiceInitialized(serviceArg)
+			}
+		})
 	}
 
 	if handler, ok := service.(EventHandlerServiceEventsBound); ok {
-		if service != r {
-			r.logger.Info("bound 'EventServiceEventsBound' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventServiceEventsBound' event handler", "service", service.Name())
 		}
-		r.Events().On(EventServiceEventsBound, handler.OnServiceEventsBound)
+		m.Events().On(EventServiceEventsBound, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnServiceEventsBound(serviceArg)
+			}
+		})
 	}
 
 	if handler, ok := service.(EventHandlerServiceLoggerBound); ok {
-		if service != r {
-			r.logger.Info("bound 'EventServiceLoggerBound' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventServiceLoggerBound' event handler", "service", service.Name())
 		}
-		r.Events().On(EventServiceLoggerBound, handler.OnServiceLoggerBound)
+		m.Events().On(EventServiceLoggerBound, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnServiceLoggerBound(serviceArg)
+			}
+		})
 	}
 
-	if handler, ok := service.(EventHandlerRuntimeRunLoopInitiated); ok {
-		if service != r {
-			r.logger.Info("bound 'EventRuntimeRunLoopInitiated' event handler", "service", service.Name())
+	if handler, ok := service.(EventHandlerServiceMeshRunLoopInitiated); ok {
+		if service != m {
+			m.logger.Debug("bound 'EventServiceMeshRunLoopInitiated' event handler", "service", service.Name())
 		}
-		r.Events().On(EventRuntimeRunLoopInitiated, handler.OnRuntimeRunLoopInitiated)
+		m.Events().On(EventServiceMeshRunLoopInitiated, func(_ ...any) {
+			handler.OnServiceMeshRunLoopInitiated()
+		})
 	}
 
-	if handler, ok := service.(EventHandlerRuntimeShutdownInitiated); ok {
-		if service != r {
-			r.logger.Info("bound 'EventRuntimeShutdownInitiated' event handler", "service", service.Name())
+	if handler, ok := service.(EventHandlerServiceMeshShutdownInitiated); ok {
+		if service != m {
+			m.logger.Debug("bound 'EventServiceMeshShutdownInitiated' event handler", "service", service.Name())
 		}
-		r.Events().On(EventRuntimeShutdownInitiated, handler.OnRuntimeShutdownInitiated)
+		m.Events().On(EventServiceMeshShutdownInitiated, func(_ ...any) {
+			handler.OnServiceMeshShutdownInitiated()
+		})
 	}
 
 	if handler, ok := service.(EventHandlerDependencyResolutionStarted); ok {
-		if service != r {
-			r.logger.Info("bound 'EventDependencyResolutionStarted' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventDependencyResolutionStarted' event handler", "service", service.Name())
 		}
-		r.Events().On(EventDependencyResolutionStarted, handler.OnDependencyResolutionStarted)
+		m.Events().On(EventDependencyResolutionStarted, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnDependencyResolutionStarted(serviceArg)
+			}
+		})
 	}
 
 	if handler, ok := service.(EventHandlerDependencyResolutionEnded); ok {
-		if service != r {
-			r.logger.Info("bound 'EventDependencyResolutionEnded' event handler", "service", service.Name())
+		if service != m {
+			m.logger.Debug("bound 'EventDependencyResolutionEnded' event handler", "service", service.Name())
 		}
-		r.Events().On(EventDependencyResolutionEnded, handler.OnDependencyResolutionEnded)
+		m.Events().On(EventDependencyResolutionEnded, func(args ...any) {
+			if len(args) < 1 {
+				return
+			}
+
+			if serviceArg, ok := args[0].(Service); ok {
+				handler.OnDependencyResolutionEnded(serviceArg)
+			}
+		})
 	}
 }
 
-func (r *Mesh) OnServiceAdded(args ...any) {
-	if len(args) < 1 {
+func (m *mesh) OnServiceAdded(service Service) {
+	if service == m {
 		return
 	}
 
-	if service, ok := args[0].(Service); ok {
-		if service != r {
-			r.logger.Info("service added", "service", service.Name())
-		}
-	}
+	m.logger.Info("service added", "service", service.Name())
 }
 
-func (r *Mesh) OnRuntimeShutdownInitiated(_ ...any) {
-	r.logger.Warn("initiating graceful shutdown")
+func (m *mesh) OnServiceMeshShutdownInitiated() {
+	m.logger.Warn("initiating graceful shutdown")
 }
 
-func (r *Mesh) OnServiceRemoved(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("removed service", "service", service.Name())
-	}
+func (m *mesh) OnServiceRemoved(service Service) {
+	m.logger.Debug("removed service", "service", service.Name())
 }
 
-func (r *Mesh) OnServiceInitialized(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("service initialized", "service", service.Name())
-	}
+func (m *mesh) OnServiceInitialized(service Service) {
+	m.logger.Debug("service initialized", "service", service.Name())
 }
 
-func (r *Mesh) OnServiceEventsBound(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("events bound", "service", service.Name())
-	}
+func (m *mesh) OnServiceEventsBound(service Service) {
+	m.logger.Debug("events bound", "service", service.Name())
 }
 
-func (r *Mesh) OnServiceLoggerBound(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("logger bound", "service", service.Name())
-	}
+func (m *mesh) OnServiceLoggerBound(service Service) {
+	m.logger.Debug("logger bound", "service", service.Name())
 }
 
-func (r *Mesh) OnRuntimeRunLoopInitiated(_ ...any) {
-	r.logger.Debug("run loop started")
+func (m *mesh) OnServiceMeshRunLoopInitiated() {
+	m.logger.Debug("run loop started")
 }
 
-func (r *Mesh) OnDependencyResolutionStarted(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("dependency resolution started", "service", service.Name())
-	}
+func (m *mesh) OnDependencyResolutionStarted(service Service) {
+	m.logger.Debug("dependency resolution started", "service", service.Name())
 }
 
-func (r *Mesh) OnDependencyResolutionEnded(args ...any) {
-	if len(args) < 1 {
-		return
-	}
-
-	if service, ok := args[0].(Service); ok {
-		r.logger.Debug("dependency resolution completed", "service", service.Name())
-	}
+func (m *mesh) OnDependencyResolutionEnded(service Service) {
+	m.logger.Debug("dependency resolution completed", "service", service.Name())
 }

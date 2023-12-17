@@ -7,9 +7,9 @@ const (
 	EventServiceEventsBound = "service events bound"
 	EventServiceLoggerBound = "service logger bound"
 
-	EventRuntimeRunLoopInitiated  = "runtime begin"
-	EventRuntimeShutdownInitiated = "runtime shutdown"
+	EventServiceMeshRunLoopInitiated  = "run-loop initiated"
+	EventServiceMeshShutdownInitiated = "shutdown initiated"
 
-	EventDependencyResolutionStarted = "runtime dependency resolution start"
-	EventDependencyResolutionEnded   = "runtime dependency resolution end"
+	EventDependencyResolutionStarted = "dependency resolution start"
+	EventDependencyResolutionEnded   = "dependency resolution end"
 )

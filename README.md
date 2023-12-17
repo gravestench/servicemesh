@@ -1,64 +1,77 @@
 # About
 
-This module provides an implementation of a "service mesh", which is just a 
-wrapper for a collection of "services."
+This module provides an implementation of a "service mesh", which represents a
+collection of "services."
 
-The `M` interface itself merely manages the service lifecycle. Included in this
-module are abstract interfaces for the service mesh (`M` interface) and service mesh 
-services (`Service`), as well as other interfaces for logging, 
-dependency injection, and graceful shutdown. A concrete implementation of the 
-`M` interface is provided (see `Mesh`).
+Included in this module are abstract interfaces for the service mesh 
+(`Mesh` interface) and services (`Service`), as well as other 
+integration interfaces for logging, dependency injection, and graceful shutdown.
+A concrete implementation of the `Mesh` interface is provided (see `Mesh`).
+
+When using this module as a library for developing software, it necessitates the
+architecture of any given application be a composition, or mesh, of services.
+The mesh itself governs the lifecycle of the services, and therefore, the 
+application as a whole.
+
+At the highest level, typically in a `main.go` file, an application would look
+something like this:
+```golang
+func main() {
+    app := servicemesh.New("My App")
+	
+    app.Add(&foo.Service{})
+    app.Add(&bar.Service{})
+    // add your other services here
+
+    app.Run()
+}
+```
+
+We can see that no particular service is responsible for invoking the run-loop
+of the service mesh; we invoke this run-loop one time in the `main` func of the 
+application. We also dont manually assign any dependencies, or invoke the `Init` 
+method of a service. This is all managed by the service mesh. This allows the
+mesh to perform dependency-injection, standard logger instantiation, 
+and event-handler callback binding.
 
 # Examples
 For examples see [the examples repo](https://github.com/gravestench/servicemesh-examples).
 
 
 ## Usage
-```go
-import "github.com/gravestench/servicemesh"
+This is the contract that all services must honor:
+```golang
+type Service interface {
+    Init(mesh M)
+    Name() string
+}
 ```
-```go
-// compilation error if we dont implement servicemesh.Service
-var _ servicemesh.Service = &MyService{}
-```
+Here is a trivial example service:
 ```golang
 // minimal service implementation
-type MyService struct {
-	// Your service fields
-}
+type fooService struct {}
 
-func (s *MyService) Init(manager servicemesh.Mesh) {
+func (s *fooService) Init(manager servicemesh.Mesh) {
 	// Initialization logic for your service
 }
 
-func (s *MyService) Name() string {
-	return "MyService"
+func (s *fooService) Name() string {
+	return "Foo"
 }
 ```
 ```golang
-// main.go should look like this
+// main.go would look like this
 func main() {
-	// Create a new instance of the Manager
-	manager := servicemesh.New("My App")
-
-	// Create an instance of your service
-	service := &MyService{}
-
-	// Add the service to the Manager
-	manager.Add(service)
-
-	// Run the Manager
-	manager.Run()
+    // Create the mesh instance
+    mesh := servicemesh.New()
+	
+    // Add the service
+    mesh.Add(&fooService{}) 
+    
+    // invoke the run-loop (blocking call)
+    mesh.Run()
 }
 ```
-
-In this example, we: 
-1) create a mesh manager instance using `servicemesh.New`
-2) add our service using `mesh.Add`
-3) and then run the manager with `mesh.Run`.
-
-
-The manager takes care of initializing the service and managing its lifecycle.
 
 ## Adding Services
 
@@ -68,7 +81,7 @@ To add a service to the mesh, you need to create a struct that implements the
 
 ```go
 type Service interface {
-	Init(m Mesh)
+	Init(mesh M)
 	Name() string
 }
 ```
@@ -143,22 +156,31 @@ interfaces are designed to promote modularity and extensibility in your codebase
 
 ### Mesh
 
-The `M` interface describes the contract of the concrete service `Mesh` 
-implementation that is included in this repo.
+The `Mesh` interface describes the contract of the service mesh. The concrete
+implementation of this interface is defined in this module, but it is not 
+exported. All you need to know about the Mesh, as a user of this module, is the 
+following interface:
 
 ```go
 type Mesh interface {
-    Add(Service)
-    Remove(Service)
-    Services() *[]Service
-    Shutdown()
+    Add(Service) *sync.WaitGroup
+    Remove(Service) *sync.WaitGroup
+    Run()
+    Shutdown() *sync.WaitGroup
+    
+	Services() []Service
+    
+    SetLogLevel(level int)
+    SetLogDestination(dst io.Writer)
+    
+    Events() *ee.EventEmitter
 }
 ```
 
 ### Service
 
 The `Service` interface represents a generic service within the
-`M` interface. It defines methods for initializing the service and retrieving its name.
+`Mesh` interface. It defines methods for initializing the service and retrieving its name.
 
 ```go
 type Service interface {
@@ -172,7 +194,7 @@ type Service interface {
 The `HasDependencies` interface extends the `Service` interface and
 adds methods for managing dependencies. It allows services to declare their 
 dependencies, and to declare when they are resolved. The concrete implementation
-of the `M` interface will use this `HasDependencies` interface to resolves any 
+of the `Mesh` interface will use this `HasDependencies` interface to resolves any 
 dependencies before the `Init()` method of a given service is invoked. This is 
 an optional interface, your services do not need to implement this.
 
@@ -232,6 +254,50 @@ func (s *MyService) OnShutdown() {
 	// Custom shutdown logic for your service
 }
 ```
+
+## Events
+The mesh comes integrated with an [event emitter](https://github.com/gravestench/eventemitter), 
+which is modeled after the `ee3` implementation in javascript. This is a 
+singleton instance and is referred to as the "event bus." There is a single 
+method of the `Mesh` (`Events()`) that will yield this singleton event emitter 
+instance, and all services will have an opportunity to use or store a reference 
+to this event emitter during their `Init` methods.
+
+The `Mesh` has a list of events that it will emit during normal operation:
+```golang
+const (
+	EventServiceAdded       = "service added"
+	EventServiceRemoved     = "service removed"
+	EventServiceInitialized = "service initialized"
+	EventServiceEventsBound = "service events bound"
+	EventServiceLoggerBound = "service logger bound"
+
+	EventRuntimeRunLoopInitiated  = "runtime begin"
+	EventRuntimeShutdownInitiated = "runtime shutdown"
+
+	EventDependencyResolutionStarted = "runtime dependency resolution start"
+	EventDependencyResolutionEnded   = "runtime dependency resolution end"
+)
+```
+
+As opposed to forcing direct usage of the event emitter instance, there are a 
+handful of integration interfaces which can be optionally implemented by a 
+service. These can be found in `interfaces.go`. The concrete implementation
+of the mesh found in this module dog-foods the event-bus and event handler
+integration interfaces, and is actually a `Service` too. Much of the logging 
+functionality is implemented through event handlers for events it is emitting.
+
+### NOTE
+Notice that the `Add`, `Remove`, and `Shutdown` methods of the `Mesh` each 
+yield a `sync.Waitgroup` instance. This allows the caller an opportunity to wait 
+for event-handler callbacks to finish executing:
+```golang
+mesh := servicemesh.New()
+mesh.Add(&foo.Service{}).Wait() // blocking call
+```
+
+This functionality can be especially handy in a scenario where you have services
+that are responsible for managing instances of subordinate services.
 
 ## Contributing
 

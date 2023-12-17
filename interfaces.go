@@ -8,21 +8,21 @@ import (
 	ee "github.com/gravestench/eventemitter"
 )
 
-// M is the abstract idea of the service mesh, an interface.
+// Mesh is the abstract idea of the service mesh, an interface.
 //
-// The M interface defines the operations that can be performed with
+// The Mesh interface defines the operations that can be performed with
 // services, such as adding, removing, and retrieving services. It acts as a
 // container for services and uses other interfaces like HasDependencies to
 // work with them and do things automatically on their behalf.
-type M interface {
-	// Add a single service to the M.
+type Mesh interface {
+	// Add a single service to the Mesh.
 	Add(Service) *sync.WaitGroup
 
-	// Remove a specific service from the M.
+	// Remove a specific service from the Mesh.
 	Remove(Service) *sync.WaitGroup
 
 	// Services returns a pointer to a slice of interfaces representing the
-	// services currently managed by the service M.
+	// services currently managed by the service Mesh.
 	Services() []Service
 
 	SetLogLevel(level int)
@@ -30,6 +30,7 @@ type M interface {
 
 	Events() *ee.EventEmitter
 
+	Run()
 	Shutdown() *sync.WaitGroup
 }
 
@@ -40,8 +41,8 @@ type M interface {
 // retrieving its name.
 type Service interface {
 	// Init initializes the service and establishes a connection to the
-	// service M.
-	Init(mesh M)
+	// service Mesh.
+	Init(mesh Mesh)
 
 	// Name returns the name of the service.
 	Name() string
@@ -54,7 +55,7 @@ type Service interface {
 // their dependencies are resolved, as well as a method that attempts to resolve
 // those dependencies with the given service mesh.
 //
-// The Mesh will use this interface automatically when a service is added.
+// The mesh will use this interface automatically when a service is added.
 // You do not need to implement this interface, it is optional. You would want
 // to do this when you have services that depend upon each other to operate
 type HasDependencies interface {
@@ -65,8 +66,8 @@ type HasDependencies interface {
 	DependenciesResolved() bool
 
 	// ResolveDependencies attempts to resolve the dependencies of the
-	// service using the provided M.
-	ResolveDependencies(mesh M)
+	// service using the provided Mesh.
+	ResolveDependencies(mesh Mesh)
 }
 
 // HasLogger is an interface for services that require a logger instance.
@@ -94,63 +95,62 @@ type HasGracefulShutdown interface {
 }
 
 // EventHandlerServiceAdded is an optional interface. If implemented, it will automatically bind to the
-// "Service Added" service mesh event, allowing the object to respond when a new service is added.
+// "Service Added" service mesh event, allowing the handler to respond when a new service is added.
 type EventHandlerServiceAdded interface {
-	OnServiceAdded(args ...interface{})
+	OnServiceAdded(service Service)
 }
 
 // EventHandlerServiceRemoved is an optional interface. If implemented, it will automatically bind to the
 // "Service Removed" service mesh event, enabling the implementor to respond when a service is removed.
-// When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceRemoved interface {
-	OnServiceRemoved(args ...interface{})
+	OnServiceRemoved(service Service)
 }
 
 // EventHandlerServiceInitialized is an optional interface. If implemented, it will automatically bind to the
 // "Service Initialized" service mesh event, enabling the implementor to respond when a service is initialized.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceInitialized interface {
-	OnServiceInitialized(args ...interface{})
+	OnServiceInitialized(service Service)
 }
 
 // EventHandlerServiceEventsBound is an optional interface. If implemented, it will automatically bind to the
 // "Service Events Bound" service mesh event, enabling the implementor to respond when events are bound to a service.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceEventsBound interface {
-	OnServiceEventsBound(args ...interface{})
+	OnServiceEventsBound(service Service)
 }
 
 // EventHandlerServiceLoggerBound is an optional interface. If implemented, it will automatically bind to the
 // "Service Logger Bound" service mesh event, enabling the implementor to respond when a logger is bound to a service.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceLoggerBound interface {
-	OnServiceLoggerBound(args ...interface{})
+	OnServiceLoggerBound(service Service)
 }
 
-// EventHandlerRuntimeRunLoopInitiated is an optional interface. If implemented, it will automatically bind to the
-// "Mesh Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
+// EventHandlerServiceMeshRunLoopInitiated is an optional interface. If implemented, it will automatically bind to the
+// "mesh Run Loop Initiated" service mesh event, enabling the implementor to respond when the service mesh run loop is initiated.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
-type EventHandlerRuntimeRunLoopInitiated interface {
-	OnRuntimeRunLoopInitiated(args ...interface{})
+type EventHandlerServiceMeshRunLoopInitiated interface {
+	OnServiceMeshRunLoopInitiated()
 }
 
-// EventHandlerRuntimeShutdownInitiated is an optional interface. If implemented, it will automatically bind to the
-// "Mesh Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
+// EventHandlerServiceMeshShutdownInitiated is an optional interface. If implemented, it will automatically bind to the
+// "mesh Shutdown Initiated" service mesh event, enabling the implementor to respond when the service mesh is preparing to shut down.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
-type EventHandlerRuntimeShutdownInitiated interface {
-	OnRuntimeShutdownInitiated(args ...interface{})
+type EventHandlerServiceMeshShutdownInitiated interface {
+	OnServiceMeshShutdownInitiated()
 }
 
 // EventHandlerDependencyResolutionStarted is an optional interface. If implemented, it will automatically bind to the
 // "Dependency Resolution Started" service mesh event, enabling the implementor to respond when dependency resolution starts.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerDependencyResolutionStarted interface {
-	OnDependencyResolutionStarted(args ...interface{})
+	OnDependencyResolutionStarted(service Service)
 }
 
 // EventHandlerDependencyResolutionEnded is an optional interface. If implemented, it will automatically bind to the
 // "Dependency Resolution Ended" service mesh event, enabling the implementor to respond when dependency resolution ends.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerDependencyResolutionEnded interface {
-	OnDependencyResolutionEnded(args ...interface{})
+	OnDependencyResolutionEnded(service Service)
 }

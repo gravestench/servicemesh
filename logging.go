@@ -9,53 +9,62 @@ import (
 )
 
 // newLogger is a factory function that generates a slog instance
-func (r *Mesh) newLogger(service Service) *slog.Logger {
+func (m *mesh) newLogger(service Service) *slog.Logger {
 	name := service.Name()
 
 	opts := &slog.HandlerOptions{
-		Level: slog.Level(r.logLevel),
+		Level: slog.Level(m.logLevel),
 	}
 
-	if r.logOutput == nil {
-		r.logOutput = os.Stdout
+	if m.logOutput == nil {
+		m.logOutput = os.Stdout
 	}
 
-	handler := slog.NewTextHandler(r.logOutput, opts) // or NewJSONHandler for JSON output
+	if m.logHandler == nil {
+		m.logHandler = slog.NewTextHandler(m.logOutput, opts) // or NewJSONHandler for JSON output
+	}
 
-	logger := slog.New(handler)
+	logger := slog.New(m.logHandler)
 
-	if service != r {
+	if service != m {
 		logger = logger.With(slog.String("service", name))
 	}
 
 	return logger
 }
 
-func (r *Mesh) SetLogLevel(level int) { // Change level type as appropriate
-	r.logLevel = level
-	r.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
-	r.logger = r.newLogger(r)
+func (m *mesh) SetLogHandler(handler slog.Handler) { // Change level type as appropriate
+	m.logHandler = handler
+	m.logger = m.newLogger(m)
 
-	r.updateServiceLoggers()
+	m.updateServiceLoggers()
 }
 
-func (r *Mesh) SetLogDestination(dst io.Writer) {
-	r.logOutput = dst
+func (m *mesh) SetLogLevel(level int) { // Change level type as appropriate
+	m.logLevel = level
+	m.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
+	m.logger = m.newLogger(m)
 
-	newLogger := r.newLogger(r)
-	r.logger = newLogger
-
-	r.updateServiceLoggers()
+	m.updateServiceLoggers()
 }
 
-func (r *Mesh) updateServiceLoggers() {
+func (m *mesh) SetLogDestination(dst io.Writer) {
+	m.logOutput = dst
+
+	newLogger := m.newLogger(m)
+	m.logger = newLogger
+
+	m.updateServiceLoggers()
+}
+
+func (m *mesh) updateServiceLoggers() {
 	// set the log level for each service that has a logger
-	for _, service := range r.Services() {
+	for _, service := range m.Services() {
 		candidate, ok := service.(HasLogger)
 		if !ok {
 			continue
 		}
 
-		candidate.SetLogger(r.newLogger(candidate))
+		candidate.SetLogger(m.newLogger(candidate))
 	}
 }

@@ -7,16 +7,16 @@ import (
 )
 
 func TestRuntime(t *testing.T) {
-	rt := New()
+	m := New()
 
 	go func() {
 		time.Sleep(time.Second * 3)
-		rt.Shutdown().Wait()
+		m.Shutdown().Wait()
 	}()
 
-	rt.Add(&exampleService{})
+	m.Add(&exampleService{})
 
-	rt.Run()
+	m.Run()
 }
 
 type exampleService struct {
@@ -31,7 +31,7 @@ func (e *exampleService) Logger() *slog.Logger {
 	return e.logger
 }
 
-func (e *exampleService) Init(rt M) {
+func (e *exampleService) Init(rt Mesh) {
 
 }
 
