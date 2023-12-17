@@ -13,7 +13,7 @@ func (m *mesh) newLogger(service Service) *slog.Logger {
 	name := service.Name()
 
 	opts := &slog.HandlerOptions{
-		Level: slog.Level(m.logLevel),
+		Level: m.logLevel,
 	}
 
 	if m.logOutput == nil {

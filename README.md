@@ -3,10 +3,9 @@
 This module provides an implementation of a "service mesh", which represents a
 collection of "services."
 
-Included in this module are abstract interfaces for the service mesh 
-(`Mesh` interface) and services (`Service`), as well as other 
+Included in this module are abstract interfaces for the service mesh and 
+services (see the `Mesh` and `Service` interfaces), as well as other 
 integration interfaces for logging, dependency injection, and graceful shutdown.
-A concrete implementation of the `Mesh` interface is provided (see `Mesh`).
 
 When using this module as a library for developing software, it necessitates the
 architecture of any given application be a composition, or mesh, of services.
