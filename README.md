@@ -41,7 +41,7 @@ For examples see [the examples repo](https://github.com/gravestench/servicemesh-
 This is the contract that all services must honor:
 ```golang
 type Service interface {
-    Init(mesh M)
+    Init(mesh Mesh)
     Name() string
 }
 ```
@@ -91,7 +91,7 @@ you to perform any necessary setup. The `Name()` method returns the name of the 
 You can then add your service to the Manager using the `Add()` method:
 
 ```go
-manager.Add(service)
+mesh.Add(service)
 ```
 
 ## Graceful Shutdown
@@ -102,11 +102,11 @@ shutdown process and allows the services to perform cleanup operations. You can 
 the shutdown by pressing `Ctrl+C` in the console.
 
 ```go
-manager.Run() // this is blocking until the interrupt fires
+mesh.Run() // this is blocking until the interrupt fires
 ```
 
 The `Run()` method blocks until the interrupt signal is
-received. Once the signal is received, the manager calls the `OnShutdown()` method of each
+received. Once the signal is received, the mesh calls the `OnShutdown()` method of each
 service, allowing them to perform any necessary cleanup. You can implement the cleanup
 logic within the `OnShutdown()` method of your service.
 
@@ -118,13 +118,13 @@ func (s *MyService) OnShutdown() {
 
 ## Logging Integration
 
-The Manager integrates with the `slog` logging module to provide logging
-capabilities for your services. The manager automatically initializes a logger and passes
-it to the services that implement the `HasLogger` interface.
+The Manager integrates with the `slog` logging module to provide logging 
+capabilities for your services. The manager automatically initializes a logger 
+and passes it to the services that implement the `HasLogger` interface.
 
-To use the logger within your service, you need to implement the `HasLogger` interface.
-The manager will invoke the `SetLogger` method automatically when the service
-is added to the mesh.
+To use the logger within your service, you need to implement the `HasLogger` 
+interface. The manager will invoke the `SetLogger` method automatically when the
+service is added to the mesh.
 
 ```go
 type HasLogger interface {
@@ -169,7 +169,8 @@ type Mesh interface {
     
 	Services() []Service
     
-    SetLogLevel(level int)
+	SetLogHandler(handler slog.Handler)
+    SetLogLevel(level slog.Level)
     SetLogDestination(dst io.Writer)
     
     Events() *ee.EventEmitter
@@ -179,7 +180,8 @@ type Mesh interface {
 ### Service
 
 The `Service` interface represents a generic service within the
-`Mesh` interface. It defines methods for initializing the service and retrieving its name.
+`Mesh` interface. It defines methods for initializing the service and retrieving
+its name.
 
 ```go
 type Service interface {
@@ -193,9 +195,9 @@ type Service interface {
 The `HasDependencies` interface extends the `Service` interface and
 adds methods for managing dependencies. It allows services to declare their 
 dependencies, and to declare when they are resolved. The concrete implementation
-of the `Mesh` interface will use this `HasDependencies` interface to resolves any 
-dependencies before the `Init()` method of a given service is invoked. This is 
-an optional interface, your services do not need to implement this.
+of the `Mesh` interface will use this `HasDependencies` interface to resolves 
+any dependencies before the `Init()` method of a given service is invoked. This 
+is an optional interface, your services do not need to implement this.
 
 ```go
 type HasDependencies interface {
