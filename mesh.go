@@ -23,7 +23,7 @@ type mesh struct {
 	services     []Service
 	logger       *slog.Logger
 	logOutput    io.Writer
-	logLevel     int
+	logLevel     slog.Level
 	logHandler   slog.Handler
 	events       *ee.EventEmitter
 	shuttingDown bool
@@ -41,7 +41,7 @@ func New(args ...string) Mesh {
 		name:      name,
 		events:    ee.New(),
 		logOutput: os.Stdout,
-		logLevel:  int(slog.LevelInfo),
+		logLevel:  slog.LevelInfo,
 	}
 
 	// the service mesh itself is a service that binds handlers to its own events

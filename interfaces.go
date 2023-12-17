@@ -25,13 +25,18 @@ type Mesh interface {
 	// services currently managed by the service Mesh.
 	Services() []Service
 
-	SetLogLevel(level int)
-	SetLogDestination(dst io.Writer)
-
 	Events() *ee.EventEmitter
 
 	Run()
 	Shutdown() *sync.WaitGroup
+
+	slogLoggerMethods
+}
+
+type slogLoggerMethods interface {
+	SetLogHandler(handler slog.Handler)
+	SetLogLevel(level slog.Level)
+	SetLogDestination(dst io.Writer)
 }
 
 // Service represents a generic service within a service mesh.

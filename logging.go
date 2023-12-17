@@ -40,7 +40,7 @@ func (m *mesh) SetLogHandler(handler slog.Handler) { // Change level type as app
 	m.updateServiceLoggers()
 }
 
-func (m *mesh) SetLogLevel(level int) { // Change level type as appropriate
+func (m *mesh) SetLogLevel(level slog.Level) { // Change level type as appropriate
 	m.logLevel = level
 	m.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
 	m.logger = m.newLogger(m)
