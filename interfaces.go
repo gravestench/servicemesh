@@ -21,8 +21,8 @@ type Mesh interface {
 	// Remove a specific service from the Mesh.
 	Remove(Service) *sync.WaitGroup
 
-	// Services returns a pointer to a slice of interfaces representing the
-	// services currently managed by the service Mesh.
+	// Services returns a pointer to a slice of Services currently managed by
+	// the service Mesh **which are ready to be used**.
 	Services() []Service
 
 	Events() *ee.EventEmitter
@@ -51,6 +51,9 @@ type Service interface {
 
 	// Name returns the name of the service.
 	Name() string
+
+	// Ready returns whether the service is ready to be used
+	Ready() bool
 }
 
 // HasDependencies represents a service that can resolve its dependencies.
@@ -72,7 +75,7 @@ type HasDependencies interface {
 
 	// ResolveDependencies attempts to resolve the dependencies of the
 	// service using the provided Mesh.
-	ResolveDependencies(mesh Mesh)
+	ResolveDependencies(services []Service)
 }
 
 // HasLogger is an interface for services that require a logger instance.

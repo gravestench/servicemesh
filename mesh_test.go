@@ -39,6 +39,10 @@ func (e *exampleService) Name() string {
 	return "example"
 }
 
+func (e *exampleService) Ready() bool {
+	return true
+}
+
 func (e *exampleService) OnShutdown() {
 	time.Sleep(time.Second * 3)
 	e.logger.Info("graceful shutdown completed")

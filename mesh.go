@@ -116,7 +116,7 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 
 	// Check if all dependencies are resolved
 	for !resolver.DependenciesResolved() {
-		resolver.ResolveDependencies(m)
+		resolver.ResolveDependencies(m.Services())
 		time.Sleep(dependencyResolutionDwellDuration)
 	}
 
@@ -139,11 +139,19 @@ func (m *mesh) initService(service Service) {
 	m.events.Emit(EventServiceInitialized, service)
 }
 
-// Services returns a pointer to a slice of interfaces representing the services
-// managed by the mesh. This is a copy of the internal slice, modifying it will
-// not modify the slice being maintained by the mesh.
-func (m *mesh) Services() []Service {
-	return append([]Service{}, m.services...)
+// Services returns a pointer to a slice of Services managed by the mesh. If any
+// of the services implement ServiceWithReady, they will be omitted from the
+// returned slice if they are not yet ready.
+func (m *mesh) Services() (list []Service) {
+	for _, service := range m.services {
+		if !service.Ready() {
+			continue
+		}
+
+		list = append(list, service)
+	}
+
+	return
 }
 
 // Remove a specific service from the mesh.
@@ -198,6 +206,8 @@ func (m *mesh) Shutdown() *sync.WaitGroup {
 func (m *mesh) Name() string {
 	return m.name
 }
+
+func (m *mesh) Ready() bool { return true }
 
 // Run starts the mesh and waits for an interrupt signal to exit.
 func (m *mesh) Run() {
