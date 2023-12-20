@@ -180,13 +180,14 @@ type Mesh interface {
 ### Service
 
 The `Service` interface represents a generic service within the
-`Mesh` interface. It defines methods for initializing the service and retrieving
-its name.
+`Mesh` interface. It defines methods for initializing the service, retrieving
+its name, and a method that returns whether the service is ready to be used.
 
 ```go
 type Service interface {
     Init(Mesh)
     Name() string
+    Ready() bool
 }
 ```
 
@@ -203,7 +204,7 @@ is an optional interface, your services do not need to implement this.
 type HasDependencies interface {
 	Service
     DependenciesResolved() bool
-    ResolveDependencies(mesh M)
+    ResolveDependencies(services []servicemesh.Service)
 }
 ```
 
@@ -248,7 +249,11 @@ func (s *MyService) Init(m Mesh) {
 }
 
 func (s *MyService) Name() string {
-	return "MyService"
+    return "MyService"
+}
+
+func (s *MyService) Ready() bool {
+    return true
 }
 
 func (s *MyService) OnShutdown() {

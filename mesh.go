@@ -71,7 +71,14 @@ func (m *mesh) Init(_ Mesh) {
 // Add a single service to the mesh.
 func (m *mesh) Add(service Service) *sync.WaitGroup {
 	m.Init(nil) // always ensure service mesh is init
-	m.bindEventHandlerInterfaces(service)
+
+	go func() {
+		for !service.Ready() {
+			time.Sleep(dependencyResolutionDwellDuration)
+		}
+
+		m.bindEventHandlerInterfaces(service)
+	}()
 
 	var wg sync.WaitGroup
 
@@ -88,6 +95,7 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 	}
 
 	m.services = append(m.services, service)
+	m.events.Emit(EventServiceAdded, service)
 
 	// Check if the service is a HasDependencies
 	if resolver, ok := service.(HasDependencies); ok {
@@ -95,7 +103,6 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 		wg.Add(1)
 		go func() {
 			m.resolveDependenciesAndInit(resolver)
-			m.events.Emit(EventServiceAdded, service)
 			wg.Done()
 		}()
 	} else {
@@ -103,7 +110,6 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 		wg.Add(1)
 		go func() {
 			m.initService(service)
-			m.events.Emit(EventServiceAdded, service)
 			wg.Done()
 		}()
 	}
@@ -114,6 +120,13 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	m.events.Emit(EventDependencyResolutionStarted, resolver)
 
+	go func() {
+		for !resolver.DependenciesResolved() {
+			m.logger.Warn("dependencies not resolved", "service", resolver.Name())
+			time.Sleep(time.Second)
+		}
+	}()
+
 	// Check if all dependencies are resolved
 	for !resolver.DependenciesResolved() {
 		resolver.ResolveDependencies(m.Services())
@@ -123,6 +136,11 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	m.events.Emit(EventDependencyResolutionEnded, resolver)
 
 	// All dependencies resolved, initialize the service
+	for !resolver.Ready() {
+		time.Sleep(time.Second)
+		m.logger.Warn("waiting to become ready", "service", resolver.Name())
+	}
+
 	m.initService(resolver)
 }
 
@@ -134,24 +152,19 @@ func (m *mesh) initService(service Service) {
 		m.newLogger(service).Debug("initializing")
 	}
 
+	// check if ready
+	for !service.Ready() {
+		time.Sleep(dependencyResolutionDwellDuration)
+	}
+
 	service.Init(m)
 
 	m.events.Emit(EventServiceInitialized, service)
 }
 
-// Services returns a pointer to a slice of Services managed by the mesh. If any
-// of the services implement ServiceWithReady, they will be omitted from the
-// returned slice if they are not yet ready.
+// Services returns a pointer to a slice of Services managed by the mesh.
 func (m *mesh) Services() (list []Service) {
-	for _, service := range m.services {
-		if !service.Ready() {
-			continue
-		}
-
-		list = append(list, service)
-	}
-
-	return
+	return append(list, m.services...)
 }
 
 // Remove a specific service from the mesh.
@@ -376,19 +389,19 @@ func (m *mesh) OnServiceMeshShutdownInitiated() {
 
 func (m *mesh) OnServiceRemoved(service Service) {
 	if service != m {
-		m.logger.Debug("removed service", "service", service.Name())
+		m.logger.Info("removed service", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnServiceInitialized(service Service) {
 	if service != m {
-		m.logger.Debug("service initialized", "service", service.Name())
+		m.logger.Info("service initialized", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnServiceEventsBound(service Service) {
 	if service != m {
-		m.logger.Debug("events bound", "service", service.Name())
+		m.logger.Info("events bound", "service", service.Name())
 	}
 }
 
@@ -399,17 +412,17 @@ func (m *mesh) OnServiceLoggerBound(service Service) {
 }
 
 func (m *mesh) OnServiceMeshRunLoopInitiated() {
-	m.logger.Debug("run loop started")
+	m.logger.Info("run loop started")
 }
 
 func (m *mesh) OnDependencyResolutionStarted(service Service) {
 	if service != m {
-		m.logger.Debug("dependency resolution started", "service", service.Name())
+		m.logger.Info("dependency resolution started", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnDependencyResolutionEnded(service Service) {
 	if service != m {
-		m.logger.Debug("dependency resolution completed", "service", service.Name())
+		m.logger.Info("dependency resolution completed", "service", service.Name())
 	}
 }
