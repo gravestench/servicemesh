@@ -12,8 +12,6 @@ func TestRuntime(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * 3)
-		s.ready = true
-		time.Sleep(time.Second * 3)
 		m.Shutdown().Wait()
 	}()
 
@@ -24,7 +22,6 @@ func TestRuntime(t *testing.T) {
 
 type exampleService struct {
 	logger *slog.Logger
-	ready  bool
 }
 
 func (e *exampleService) SetLogger(logger *slog.Logger) {
@@ -41,10 +38,6 @@ func (e *exampleService) Init(_ Mesh) {
 
 func (e *exampleService) Name() string {
 	return "example"
-}
-
-func (e *exampleService) Ready() bool {
-	return e.ready
 }
 
 func (e *exampleService) OnShutdown() {

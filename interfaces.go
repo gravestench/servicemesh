@@ -51,9 +51,6 @@ type Service interface {
 
 	// Name returns the name of the service.
 	Name() string
-
-	// Ready returns whether the service is ready to be used
-	Ready() bool
 }
 
 // HasDependencies represents a service that can resolve its dependencies.

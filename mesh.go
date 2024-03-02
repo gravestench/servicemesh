@@ -72,11 +72,7 @@ func (m *mesh) Init(_ Mesh) {
 func (m *mesh) Add(service Service) *sync.WaitGroup {
 	m.Init(nil) // always ensure service mesh is init
 
-	go func() {
-		for !service.Ready() {
-			time.Sleep(dependencyResolutionDwellDuration)
-		}
-
+	defer func() {
 		m.bindEventHandlerInterfaces(service)
 	}()
 
@@ -135,12 +131,6 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 
 	m.events.Emit(EventDependencyResolutionEnded, resolver)
 
-	// All dependencies resolved, initialize the service
-	for !resolver.Ready() {
-		time.Sleep(time.Second)
-		m.logger.Warn("waiting to become ready", "service", resolver.Name())
-	}
-
 	m.initService(resolver)
 }
 
@@ -150,11 +140,6 @@ func (m *mesh) initService(service Service) {
 		l.Logger().Debug("initializing")
 	} else {
 		m.newLogger(service).Debug("initializing")
-	}
-
-	// check if ready
-	for !service.Ready() {
-		time.Sleep(dependencyResolutionDwellDuration)
 	}
 
 	service.Init(m)
