@@ -64,7 +64,7 @@ func (m *mesh) Init(_ Mesh) {
 	m.services = make([]Service, 0)
 	m.quit = make(chan os.Signal, 1)
 
-	m.logger.Info("initializing")
+	m.logger.Debug("initializing")
 	signal.Notify(m.quit, os.Interrupt)
 }
 
@@ -79,7 +79,7 @@ func (m *mesh) Add(service Service) *sync.WaitGroup {
 	var wg sync.WaitGroup
 
 	if service != m {
-		m.logger.Info("preparing service", "service", service.Name())
+		m.logger.Debug("preparing service", "service", service.Name())
 	}
 
 	// Check if the service uses a logger
@@ -118,7 +118,7 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 
 	go func() {
 		for !resolver.DependenciesResolved() {
-			m.logger.Warn("dependencies not resolved", "service", resolver.Name())
+			m.logger.Debug("dependencies not resolved", "service", resolver.Name())
 			time.Sleep(time.Second)
 		}
 	}()
@@ -158,7 +158,7 @@ func (m *mesh) Remove(service Service) *sync.WaitGroup {
 
 	for i, svc := range m.services {
 		if svc == service {
-			m.logger.Info("removing service", "service", service.Name())
+			m.logger.Debug("removing service", "service", service.Name())
 			m.services = append(m.services[:i], m.services[i+1:]...)
 			break
 		}
@@ -185,16 +185,16 @@ func (m *mesh) Shutdown() *sync.WaitGroup {
 		if quitter, ok := service.(HasGracefulShutdown); ok {
 
 			if l, ok := quitter.(HasLogger); ok && l.Logger() != nil {
-				l.Logger().Info("shutting down")
+				l.Logger().Debug("shutting down")
 			} else {
-				m.logger.Info("shutting down service", "service", service.Name())
+				m.logger.Debug("shutting down service", "service", service.Name())
 			}
 
 			quitter.OnShutdown()
 		}
 	}
 
-	m.logger.Info("exiting")
+	m.logger.Warn("exiting")
 
 	// allow the caller to wait for the event handlers to finish
 	return wg
@@ -364,7 +364,7 @@ func (m *mesh) bindEventHandlerInterfaces(service Service) {
 
 func (m *mesh) OnServiceAdded(service Service) {
 	if service != m {
-		m.logger.Info("service added", "service", service.Name())
+		m.logger.Debug("service added", "service", service.Name())
 	}
 }
 
@@ -374,19 +374,19 @@ func (m *mesh) OnServiceMeshShutdownInitiated() {
 
 func (m *mesh) OnServiceRemoved(service Service) {
 	if service != m {
-		m.logger.Info("removed service", "service", service.Name())
+		m.logger.Debug("removed service", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnServiceInitialized(service Service) {
 	if service != m {
-		m.logger.Info("service initialized", "service", service.Name())
+		m.logger.Debug("service initialized", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnServiceEventsBound(service Service) {
 	if service != m {
-		m.logger.Info("events bound", "service", service.Name())
+		m.logger.Debug("events bound", "service", service.Name())
 	}
 }
 
@@ -397,17 +397,17 @@ func (m *mesh) OnServiceLoggerBound(service Service) {
 }
 
 func (m *mesh) OnServiceMeshRunLoopInitiated() {
-	m.logger.Info("run loop started")
+	m.logger.Debug("run loop started")
 }
 
 func (m *mesh) OnDependencyResolutionStarted(service Service) {
 	if service != m {
-		m.logger.Info("dependency resolution started", "service", service.Name())
+		m.logger.Debug("dependency resolution started", "service", service.Name())
 	}
 }
 
 func (m *mesh) OnDependencyResolutionEnded(service Service) {
 	if service != m {
-		m.logger.Info("dependency resolution completed", "service", service.Name())
+		m.logger.Debug("dependency resolution completed", "service", service.Name())
 	}
 }
