@@ -12,4 +12,5 @@ const (
 
 	EventDependencyResolutionStarted = "dependency resolution start"
 	EventDependencyResolutionEnded   = "dependency resolution end"
+	EventDependencyResolutionFailed  = "dependency resolution failed"
 )

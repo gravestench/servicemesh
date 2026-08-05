@@ -2,6 +2,7 @@ package servicemesh
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	dependencyResolutionDwellDuration = 10 * time.Millisecond
-	dependencyResolutionTimeout       = 30 * time.Second
+	dependencyResolutionDwellDuration  = 10 * time.Millisecond
+	defaultDependencyResolutionTimeout = 30 * time.Second
 )
 
 // New creates a new instance of a service mesh. Optionally, strings can be
@@ -29,10 +30,11 @@ func New(args ...string) Mesh {
 	}
 
 	r := &mesh{
-		name:      name,
-		events:    ee.New(),
-		logOutput: os.Stdout,
-		logLevel:  slog.LevelInfo,
+		name:                        name,
+		events:                      ee.New(),
+		logOutput:                   os.Stdout,
+		logLevel:                    slog.LevelInfo,
+		dependencyResolutionTimeout: defaultDependencyResolutionTimeout,
 	}
 	r.Init(nil)
 
@@ -47,20 +49,22 @@ var _ Mesh = &mesh{}
 
 // mesh represents a collection of service mesh services.
 type mesh struct {
-	initOnce     sync.Once
-	mu           sync.RWMutex
-	logMu        sync.Mutex
-	name         string
-	quit         chan os.Signal
-	ctx          context.Context
-	cancel       context.CancelFunc
-	services     []Service
-	logger       *slog.Logger
-	logOutput    io.Writer
-	logLevel     slog.Level
-	logHandler   slog.Handler
-	events       *ee.EventEmitter
-	shuttingDown bool
+	initOnce                    sync.Once
+	mu                          sync.RWMutex
+	logMu                       sync.Mutex
+	shutdownWG                  sync.WaitGroup
+	name                        string
+	quit                        chan os.Signal
+	ctx                         context.Context
+	cancel                      context.CancelFunc
+	services                    []Service
+	logger                      *slog.Logger
+	logOutput                   io.Writer
+	logLevel                    slog.Level
+	logHandler                  slog.Handler
+	events                      *ee.EventEmitter
+	shuttingDown                bool
+	dependencyResolutionTimeout time.Duration
 }
 
 func (m *mesh) Init(_ Mesh) {
@@ -70,6 +74,7 @@ func (m *mesh) Init(_ Mesh) {
 		}
 		m.ctx, m.cancel = context.WithCancel(context.Background())
 		m.quit = make(chan os.Signal, 1)
+		m.shutdownWG.Add(1)
 		logger := m.newLogger(m)
 		m.logMu.Lock()
 		m.logger = logger
@@ -134,8 +139,13 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	m.events.Emit(EventDependencyResolutionStarted, resolver).Wait()
 	ticker := time.NewTicker(dependencyResolutionDwellDuration)
 	defer ticker.Stop()
-	timer := time.NewTimer(dependencyResolutionTimeout)
-	defer timer.Stop()
+	timeout := m.getDependencyResolutionTimeout()
+	var timeoutC <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		timeoutC = timer.C
+	}
 
 	for {
 		if resolver.DependenciesResolved() {
@@ -144,10 +154,10 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 		resolver.ResolveDependencies(m.Services())
 		select {
 		case <-m.ctx.Done():
-			m.meshLogger().Warn("dependency resolution canceled", "service", resolver.Name())
+			m.dependencyResolutionFailed(resolver, fmt.Errorf("%w: %v", ErrDependencyResolutionCanceled, m.ctx.Err()))
 			return
-		case <-timer.C:
-			m.meshLogger().Error("dependency resolution timed out", "service", resolver.Name(), "timeout", dependencyResolutionTimeout)
+		case <-timeoutC:
+			m.dependencyResolutionFailed(resolver, fmt.Errorf("%w after %s", ErrDependencyResolutionTimeout, timeout))
 			return
 		case <-ticker.C:
 		}
@@ -156,6 +166,25 @@ func (m *mesh) resolveDependenciesAndInit(resolver HasDependencies) {
 	m.events.Emit(EventDependencyResolutionEnded, resolver).Wait()
 
 	m.initService(resolver)
+}
+
+// SetDependencyResolutionTimeout configures how long a service may spend
+// resolving dependencies. A non-positive duration disables the timeout.
+func (m *mesh) SetDependencyResolutionTimeout(timeout time.Duration) {
+	m.mu.Lock()
+	m.dependencyResolutionTimeout = timeout
+	m.mu.Unlock()
+}
+
+func (m *mesh) getDependencyResolutionTimeout() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.dependencyResolutionTimeout
+}
+
+func (m *mesh) dependencyResolutionFailed(service Service, err error) {
+	m.meshLogger().Error(err.Error(), "service", service.Name())
+	m.events.Emit(EventDependencyResolutionFailed, service, err).Wait()
 }
 
 // initService initializes a service after being added to the mesh.
@@ -203,7 +232,7 @@ func (m *mesh) Shutdown() *sync.WaitGroup {
 	m.mu.Lock()
 	if m.shuttingDown {
 		m.mu.Unlock()
-		return &sync.WaitGroup{}
+		return &m.shutdownWG
 	}
 	m.shuttingDown = true
 	services := append([]Service(nil), m.services...)
@@ -233,9 +262,10 @@ func (m *mesh) Shutdown() *sync.WaitGroup {
 	}
 
 	m.meshLogger().Warn("exiting")
+	wg.Wait()
+	m.shutdownWG.Done()
 
-	// allow the caller to wait for the event handlers to finish
-	return wg
+	return &m.shutdownWG
 }
 
 // Name returns the name of the mesh.
@@ -386,6 +416,23 @@ func (m *mesh) bindEventHandlerInterfaces(service Service) {
 			}
 		})
 	}
+
+	if handler, ok := service.(EventHandlerDependencyResolutionFailed); ok {
+		if service != m {
+			m.meshLogger().Debug("bound 'EventDependencyResolutionFailed' event handler", "service", service.Name())
+		}
+		m.Events().On(EventDependencyResolutionFailed, func(args ...any) {
+			if len(args) < 2 {
+				return
+			}
+
+			serviceArg, serviceOK := args[0].(Service)
+			errArg, errOK := args[1].(error)
+			if serviceOK && errOK {
+				handler.OnDependencyResolutionFailed(serviceArg, errArg)
+			}
+		})
+	}
 }
 
 // The following methods implement the event handler integration interfaces
@@ -439,5 +486,11 @@ func (m *mesh) OnDependencyResolutionStarted(service Service) {
 func (m *mesh) OnDependencyResolutionEnded(service Service) {
 	if service != m {
 		m.meshLogger().Debug("dependency resolution completed", "service", service.Name())
+	}
+}
+
+func (m *mesh) OnDependencyResolutionFailed(service Service, err error) {
+	if service != m {
+		m.meshLogger().Debug("dependency resolution failed", "service", service.Name(), "error", err)
 	}
 }

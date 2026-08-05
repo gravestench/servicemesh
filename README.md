@@ -101,6 +101,15 @@ dependency resolution and initialization to complete:
 mesh.Add(service).Wait()
 ```
 
+Dependency resolution times out after 30 seconds by default. Configure the
+duration before adding dependent services, or disable it with a non-positive
+duration:
+
+```go
+mesh.SetDependencyResolutionTimeout(10 * time.Second)
+mesh.SetDependencyResolutionTimeout(0) // disable the timeout
+```
+
 ## Graceful Shutdown
 
 The mesh supports graceful shutdown by listening for the interrupt signal
@@ -116,6 +125,13 @@ The `Run()` method blocks until the interrupt signal is
 received. Once the signal is received, the mesh calls the `OnShutdown()` method of each
 service, allowing them to perform any necessary cleanup. You can implement the cleanup
 logic within the `OnShutdown()` method of your service.
+
+Every call to `Shutdown()` returns the same completion handle. Concurrent
+callers can safely wait for all graceful-shutdown and shutdown-event handlers:
+
+```go
+mesh.Shutdown().Wait()
+```
 
 ```go
 func (s *MyService) OnShutdown() {
@@ -178,7 +194,8 @@ type Mesh interface {
     
 	SetLogHandler(handler slog.Handler)
     SetLogLevel(level slog.Level)
-    SetLogDestination(dst io.Writer)
+	SetLogDestination(dst io.Writer)
+	SetDependencyResolutionTimeout(timeout time.Duration)
     
     Events() *ee.EventEmitter
 }
@@ -206,13 +223,22 @@ of the `Mesh` interface will use this `HasDependencies` interface to resolves
 any dependencies before the `Init()` method of a given service is invoked. This 
 is an optional interface; your services do not need to implement it. Resolution
 stops when the mesh shuts down and times out after 30 seconds if dependencies
-never become available.
+never become available. Implement `EventHandlerDependencyResolutionFailed` to
+receive `ErrDependencyResolutionCanceled` or `ErrDependencyResolutionTimeout`.
 
 ```go
 type HasDependencies interface {
 	Service
     DependenciesResolved() bool
     ResolveDependencies(services []servicemesh.Service)
+}
+```
+
+```go
+func (s *MyService) OnDependencyResolutionFailed(service Service, err error) {
+	if errors.Is(err, servicemesh.ErrDependencyResolutionTimeout) {
+		// Report or recover from the unavailable dependency.
+	}
 }
 ```
 
@@ -287,6 +313,7 @@ const (
 
 	EventDependencyResolutionStarted = "dependency resolution start"
 	EventDependencyResolutionEnded   = "dependency resolution end"
+	EventDependencyResolutionFailed  = "dependency resolution failed"
 )
 ```
 

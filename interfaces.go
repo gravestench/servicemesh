@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 
 	ee "github.com/gravestench/eventemitter"
 )
@@ -29,6 +30,7 @@ type Mesh interface {
 
 	Run()
 	Shutdown() *sync.WaitGroup
+	SetDependencyResolutionTimeout(timeout time.Duration)
 
 	slogLoggerMethods
 }
@@ -158,4 +160,10 @@ type EventHandlerDependencyResolutionStarted interface {
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerDependencyResolutionEnded interface {
 	OnDependencyResolutionEnded(service Service)
+}
+
+// EventHandlerDependencyResolutionFailed is an optional interface for
+// receiving dependency cancellation and timeout failures.
+type EventHandlerDependencyResolutionFailed interface {
+	OnDependencyResolutionFailed(service Service, err error)
 }

@@ -2,6 +2,7 @@ package servicemesh
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -58,7 +59,9 @@ func TestLogSettingsRebuildDefaultHandler(t *testing.T) {
 
 func TestShutdownCancelsDependencyResolution(t *testing.T) {
 	m := New()
+	observer := newDependencyFailureObserver()
 	s := &unresolvedService{testService: testService{name: "unresolved"}}
+	m.Add(observer).Wait()
 	wg := m.Add(s)
 
 	m.Shutdown().Wait()
@@ -75,6 +78,58 @@ func TestShutdownCancelsDependencyResolution(t *testing.T) {
 	}
 	if s.initialized.Load() {
 		t.Fatal("service initialized despite unresolved dependencies")
+	}
+	assertDependencyFailure(t, observer, s, ErrDependencyResolutionCanceled)
+}
+
+func TestDependencyResolutionTimeout(t *testing.T) {
+	m := New()
+	m.SetDependencyResolutionTimeout(20 * time.Millisecond)
+	observer := newDependencyFailureObserver()
+	s := &unresolvedService{testService: testService{name: "unresolved"}}
+	m.Add(observer).Wait()
+
+	m.Add(s).Wait()
+
+	if s.initialized.Load() {
+		t.Fatal("service initialized despite unresolved dependencies")
+	}
+	assertDependencyFailure(t, observer, s, ErrDependencyResolutionTimeout)
+}
+
+func TestConcurrentShutdownSharesCompletion(t *testing.T) {
+	m := New()
+	s := &blockingShutdownService{
+		testService: testService{name: "blocking"},
+		started:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	m.Add(s).Wait()
+
+	firstResult := make(chan *sync.WaitGroup, 1)
+	go func() { firstResult <- m.Shutdown() }()
+	<-s.started
+
+	second := m.Shutdown()
+	secondDone := make(chan struct{})
+	go func() {
+		second.Wait()
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+		t.Fatal("concurrent shutdown completed before graceful shutdown")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(s.release)
+	first := <-firstResult
+	second.Wait()
+	if first != second {
+		t.Fatal("shutdown callers received different completion handles")
+	}
+	if got := s.shutdownCalls.Load(); got != 1 {
+		t.Fatalf("OnShutdown called %d times, want 1", got)
 	}
 }
 
@@ -137,3 +192,52 @@ type unresolvedService struct{ testService }
 
 func (s *unresolvedService) DependenciesResolved() bool    { return false }
 func (s *unresolvedService) ResolveDependencies([]Service) {}
+
+type dependencyFailure struct {
+	service Service
+	err     error
+}
+
+type dependencyFailureObserver struct {
+	testService
+	failures chan dependencyFailure
+}
+
+func newDependencyFailureObserver() *dependencyFailureObserver {
+	return &dependencyFailureObserver{
+		testService: testService{name: "failure observer"},
+		failures:    make(chan dependencyFailure, 1),
+	}
+}
+
+func (s *dependencyFailureObserver) OnDependencyResolutionFailed(service Service, err error) {
+	s.failures <- dependencyFailure{service: service, err: err}
+}
+
+func assertDependencyFailure(t *testing.T, observer *dependencyFailureObserver, service Service, want error) {
+	t.Helper()
+	select {
+	case failure := <-observer.failures:
+		if failure.service != service {
+			t.Fatalf("failure service = %v, want %v", failure.service, service)
+		}
+		if !errors.Is(failure.err, want) {
+			t.Fatalf("failure error = %v, want %v", failure.err, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for dependency failure %v", want)
+	}
+}
+
+type blockingShutdownService struct {
+	testService
+	started       chan struct{}
+	release       chan struct{}
+	shutdownCalls atomic.Int32
+}
+
+func (s *blockingShutdownService) OnShutdown() {
+	s.shutdownCalls.Add(1)
+	close(s.started)
+	<-s.release
+}
