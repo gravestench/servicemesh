@@ -25,6 +25,17 @@ func TestAddInitializesService(t *testing.T) {
 	}
 }
 
+func TestDefaultMeshName(t *testing.T) {
+	m := New()
+	service, ok := m.(Service)
+	if !ok {
+		t.Fatal("mesh does not implement Service")
+	}
+	if got := service.Name(); got != "Service Mesh" {
+		t.Fatalf("default mesh name = %q, want %q", got, "Service Mesh")
+	}
+}
+
 func TestRemoveEmitsRemovedService(t *testing.T) {
 	m := New()
 	observer := &removalObserver{testService: testService{name: "observer"}}

@@ -23,7 +23,7 @@ const (
 // supplied as arguments which are concatenated to form the name of the service
 // mesh during logging.
 func New(args ...string) Mesh {
-	name := "baseService Mesh"
+	name := "Service Mesh"
 
 	if len(args) > 0 {
 		name = strings.Join(args, " ")

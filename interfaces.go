@@ -102,33 +102,33 @@ type HasGracefulShutdown interface {
 }
 
 // EventHandlerServiceAdded is an optional interface. If implemented, it will automatically bind to the
-// "baseService Added" service mesh event, allowing the handler to respond when a new service is added.
+// "Service Added" service mesh event, allowing the handler to respond when a new service is added.
 type EventHandlerServiceAdded interface {
 	OnServiceAdded(service Service)
 }
 
 // EventHandlerServiceRemoved is an optional interface. If implemented, it will automatically bind to the
-// "baseService Removed" service mesh event, enabling the implementor to respond when a service is removed.
+// "Service Removed" service mesh event, enabling the implementor to respond when a service is removed.
 type EventHandlerServiceRemoved interface {
 	OnServiceRemoved(service Service)
 }
 
 // EventHandlerServiceInitialized is an optional interface. If implemented, it will automatically bind to the
-// "baseService Initialized" service mesh event, enabling the implementor to respond when a service is initialized.
+// "Service Initialized" service mesh event, enabling the implementor to respond when a service is initialized.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceInitialized interface {
 	OnServiceInitialized(service Service)
 }
 
 // EventHandlerServiceEventsBound is an optional interface. If implemented, it will automatically bind to the
-// "baseService Events Bound" service mesh event, enabling the implementor to respond when events are bound to a service.
+// "Service Events Bound" service mesh event, enabling the implementor to respond when events are bound to a service.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceEventsBound interface {
 	OnServiceEventsBound(service Service)
 }
 
 // EventHandlerServiceLoggerBound is an optional interface. If implemented, it will automatically bind to the
-// "baseService Logger Bound" service mesh event, enabling the implementor to respond when a logger is bound to a service.
+// "Service Logger Bound" service mesh event, enabling the implementor to respond when a logger is bound to a service.
 // When the event is emitted, the declared method will be called and passed the arguments from the emitter.
 type EventHandlerServiceLoggerBound interface {
 	OnServiceLoggerBound(service Service)
