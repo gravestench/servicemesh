@@ -1,8 +1,6 @@
 package servicemesh
 
 import (
-	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -10,6 +8,18 @@ import (
 
 // newLogger is a factory function that generates a slog instance for a service.
 func (m *mesh) newLogger(service Service) *slog.Logger {
+	m.logMu.Lock()
+	defer m.logMu.Unlock()
+	return m.newLoggerLocked(service)
+}
+
+func (m *mesh) meshLogger() *slog.Logger {
+	m.logMu.Lock()
+	defer m.logMu.Unlock()
+	return m.logger
+}
+
+func (m *mesh) newLoggerLocked(service Service) *slog.Logger {
 	name := service.Name()
 
 	opts := &slog.HandlerOptions{
@@ -36,18 +46,22 @@ func (m *mesh) newLogger(service Service) *slog.Logger {
 // SetLogHandler sets the slog log handler interface for the service mesh and
 // all existing services, as well as any services added in the future.
 func (m *mesh) SetLogHandler(handler slog.Handler) {
+	m.logMu.Lock()
 	m.logHandler = handler
-	m.logger = m.newLogger(m)
+	m.logger = m.newLoggerLocked(m)
+	m.logMu.Unlock()
 
 	m.updateServiceLoggers()
 }
 
 // SetLogLevel sets the slog logger log level for the service mesh and
 // all existing services, as well as any services added in the future.
-func (m *mesh) SetLogLevel(level slog.Level) { // Change level type as appropriate
+func (m *mesh) SetLogLevel(level slog.Level) {
+	m.logMu.Lock()
 	m.logLevel = level
-	m.logger.Log(context.Background(), slog.LevelInfo, fmt.Sprintf("setting log level to %d", level))
-	m.logger = m.newLogger(m)
+	m.logHandler = slog.NewTextHandler(m.logOutput, &slog.HandlerOptions{Level: level})
+	m.logger = m.newLoggerLocked(m)
+	m.logMu.Unlock()
 
 	m.updateServiceLoggers()
 }
@@ -55,10 +69,14 @@ func (m *mesh) SetLogLevel(level slog.Level) { // Change level type as appropria
 // SetLogDestination sets the slog logger destination for the service mesh and
 // all existing services, as well as any services added in the future.
 func (m *mesh) SetLogDestination(dst io.Writer) {
+	if dst == nil {
+		dst = io.Discard
+	}
+	m.logMu.Lock()
 	m.logOutput = dst
-
-	newLogger := m.newLogger(m)
-	m.logger = newLogger
+	m.logHandler = slog.NewTextHandler(m.logOutput, &slog.HandlerOptions{Level: m.logLevel})
+	m.logger = m.newLoggerLocked(m)
+	m.logMu.Unlock()
 
 	m.updateServiceLoggers()
 }

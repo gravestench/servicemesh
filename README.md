@@ -28,7 +28,7 @@ func main() {
 
 We can see that no particular service is responsible for invoking the run-loop
 of the service mesh; we invoke this run-loop one time in the `main` func of the 
-application. We also dont manually assign any dependencies, or invoke the `Init` 
+application. We also don't manually assign any dependencies or invoke the `Init`
 method of a service. This is all managed by the service mesh. This allows the
 mesh to perform dependency-injection, standard logger instantiation, 
 and event-handler callback binding.
@@ -80,7 +80,7 @@ To add a service to the mesh, you need to create a struct that implements the
 
 ```go
 type Service interface {
-	Init(mesh M)
+	Init(mesh Mesh)
 	Name() string
 }
 ```
@@ -88,15 +88,22 @@ type Service interface {
 The `Init()` method is called during the initialization phase of the service and allows
 you to perform any necessary setup. The `Name()` method returns the name of the service.
 
-You can then add your service to the Manager using the `Add()` method:
+You can then add your service to the mesh using the `Add()` method:
 
 ```go
 mesh.Add(service)
 ```
 
+`Add()` returns a wait group that can be used when the caller must wait for
+dependency resolution and initialization to complete:
+
+```go
+mesh.Add(service).Wait()
+```
+
 ## Graceful Shutdown
 
-The Manager supports graceful shutdown by listening for the interrupt signal
+The mesh supports graceful shutdown by listening for the interrupt signal
 (`os.Interrupt`). When the interrupt signal is received, the manager initiates the
 shutdown process and allows the services to perform cleanup operations. You can trigger
 the shutdown by pressing `Ctrl+C` in the console.
@@ -118,7 +125,7 @@ func (s *MyService) OnShutdown() {
 
 ## Logging Integration
 
-The Manager integrates with the `slog` logging module to provide logging 
+The mesh integrates with the `slog` logging module to provide logging
 capabilities for your services. The manager automatically initializes a logger 
 and passes it to the services that implement the `HasLogger` interface.
 
@@ -181,13 +188,12 @@ type Mesh interface {
 
 The `Service` interface represents a generic service within the
 `Mesh` interface. It defines methods for initializing the service, retrieving
-its name, and a method that returns whether the service is ready to be used.
+its name.
 
 ```go
 type Service interface {
     Init(Mesh)
     Name() string
-    Ready() bool
 }
 ```
 
@@ -198,7 +204,9 @@ adds methods for managing dependencies. It allows services to declare their
 dependencies, and to declare when they are resolved. The concrete implementation
 of the `Mesh` interface will use this `HasDependencies` interface to resolves 
 any dependencies before the `Init()` method of a given service is invoked. This 
-is an optional interface, your services do not need to implement this.
+is an optional interface; your services do not need to implement it. Resolution
+stops when the mesh shuts down and times out after 30 seconds if dependencies
+never become available.
 
 ```go
 type HasDependencies interface {
@@ -252,10 +260,6 @@ func (s *MyService) Name() string {
     return "MyService"
 }
 
-func (s *MyService) Ready() bool {
-    return true
-}
-
 func (s *MyService) OnShutdown() {
 	// Custom shutdown logic for your service
 }
@@ -278,11 +282,11 @@ const (
 	EventServiceEventsBound = "service events bound"
 	EventServiceLoggerBound = "service logger bound"
 
-	EventRuntimeRunLoopInitiated  = "runtime begin"
-	EventRuntimeShutdownInitiated = "runtime shutdown"
+	EventServiceMeshRunLoopInitiated  = "run-loop initiated"
+	EventServiceMeshShutdownInitiated = "shutdown initiated"
 
-	EventDependencyResolutionStarted = "runtime dependency resolution start"
-	EventDependencyResolutionEnded   = "runtime dependency resolution end"
+	EventDependencyResolutionStarted = "dependency resolution start"
+	EventDependencyResolutionEnded   = "dependency resolution end"
 )
 ```
 
